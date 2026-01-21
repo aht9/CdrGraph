@@ -1,0 +1,27 @@
+﻿<Window x:Class="CdrGraph.Desktop.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:local="clr-namespace:CdrGraph.Desktop.Views"
+        xmlns:viewModels="clr-namespace:CdrGraph.Desktop.ViewModels"
+        mc:Ignorable="d"
+        Title="CDR Graph Analyzer" Height="600" Width="900"
+        Background="#1E1E1E" Foreground="White">
+
+    <Window.Resources>
+        <!-- Mapping ViewModels to Views (DataTemplates) -->
+        <!-- این بخش جادوی نویگیشن است: هر وقت ViewModel عوض شد، View متناظرش نمایش داده می‌شود -->
+        <DataTemplate DataType="{x:Type viewModels:ImportViewModel}">
+            <local:ImportView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type viewModels:GraphViewModel}">
+            <local:GraphView />
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <!-- ContentControl محتوای CurrentView را رندر می‌کند -->
+        <ContentControl Content="{Binding CurrentView}" />
+    </Grid>
+</Window>

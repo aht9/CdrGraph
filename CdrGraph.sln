@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CdrGraph.Desktop", "CdrGraph.Desktop\CdrGraph.Desktop.csproj", "{5529562F-7265-4226-922F-1435DCEA3ABC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CdrGraph.Infrastructure", "CdrGraph.Infrastructure\CdrGraph.Infrastructure.csproj", "{709FD466-67E2-40D6-88B2-173287B81E68}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CdrGraph.Core", "CdrGraph.Core\CdrGraph.Core.csproj", "{BD1877C1-9C74-424F-8BDA-3B1DE7B3997F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5529562F-7265-4226-922F-1435DCEA3ABC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5529562F-7265-4226-922F-1435DCEA3ABC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5529562F-7265-4226-922F-1435DCEA3ABC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5529562F-7265-4226-922F-1435DCEA3ABC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{709FD466-67E2-40D6-88B2-173287B81E68}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{709FD466-67E2-40D6-88B2-173287B81E68}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{709FD466-67E2-40D6-88B2-173287B81E68}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{709FD466-67E2-40D6-88B2-173287B81E68}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BD1877C1-9C74-424F-8BDA-3B1DE7B3997F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BD1877C1-9C74-424F-8BDA-3B1DE7B3997F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BD1877C1-9C74-424F-8BDA-3B1DE7B3997F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BD1877C1-9C74-424F-8BDA-3B1DE7B3997F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

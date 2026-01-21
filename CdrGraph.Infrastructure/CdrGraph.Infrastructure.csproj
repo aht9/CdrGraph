@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
+        <UseWPF>true</UseWPF>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.2" />
+      <PackageReference Include="MiniExcelAsync" Version="1.31.4-beta" />
+      <PackageReference Include="QuestPDF" Version="2025.12.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\CdrGraph.Core\CdrGraph.Core.csproj" />
+    </ItemGroup>
+
+</Project>
