@@ -15,8 +15,9 @@ public partial class GraphView : UserControl
         private float _scale = 1.0f;
         private SKPoint _offset = new SKPoint(0, 0);
         
-        // وضعیت موس
-        private bool _isDragging;
+        // وضعیت موس و درگ
+        private bool _isPanning; // تغییر نام از _isDragging به _isPanning برای شفافیت بیشتر
+        private GraphNode _draggedNode; // نودی که در حال جابجایی است
         private Point _lastMousePos;
         private SKPoint _lastMouseWorldPos;
         
@@ -109,7 +110,8 @@ public partial class GraphView : UserControl
             canvas.Scale(_scale);
 
             // نود کانونی (Focus Node): نودی که موس روی آن است یا انتخاب شده
-            var focusNode = _hoveredNode ?? vm.SelectedNode;
+            // اگر در حال درگ کردن هستیم، نود در حال درگ اولویت دارد
+            var focusNode = _draggedNode ?? _hoveredNode ?? vm.SelectedNode;
 
             // رسم گراف با منطق هوشمند
             DrawGraphSmart(canvas, vm.Nodes, vm.Edges, focusNode);
@@ -127,16 +129,19 @@ public partial class GraphView : UserControl
 
             canvas.Restore();
 
-            // رسم تولتیپ‌ها
-            if (_hoveredNode != null)
+            // رسم تولتیپ‌ها (فقط اگر در حال درگ کردن نیستیم)
+            if (_draggedNode == null)
             {
-                var screenPos = WorldToScreen(_lastMouseWorldPos);
-                DrawTooltip(canvas, screenPos.X * density, screenPos.Y * density, GetNodeInfo(_hoveredNode));
-            }
-            else if (_hoveredEdge != null)
-            {
-                var screenPos = WorldToScreen(_lastMouseWorldPos);
-                DrawTooltip(canvas, screenPos.X * density, screenPos.Y * density, GetEdgeInfo(_hoveredEdge, vm));
+                if (_hoveredNode != null)
+                {
+                    var screenPos = WorldToScreen(_lastMouseWorldPos);
+                    DrawTooltip(canvas, screenPos.X * density, screenPos.Y * density, GetNodeInfo(_hoveredNode));
+                }
+                else if (_hoveredEdge != null)
+                {
+                    var screenPos = WorldToScreen(_lastMouseWorldPos);
+                    DrawTooltip(canvas, screenPos.X * density, screenPos.Y * density, GetEdgeInfo(_hoveredEdge, vm));
+                }
             }
         }
 
@@ -281,6 +286,7 @@ public partial class GraphView : UserControl
             if (e.ChangedButton == MouseButton.Left)
             {
                 var pos = e.GetPosition(this);
+                // محاسبه مختصات در دنیای گراف
                 float worldX = ((float)pos.X - _offset.X) / _scale;
                 float worldY = ((float)pos.Y - _offset.Y) / _scale;
 
@@ -288,14 +294,21 @@ public partial class GraphView : UserControl
 
                 if (clickedNode != null)
                 {
+                    // شروع جابجایی نود
                     vm.SelectedNode = clickedNode;
+                    _draggedNode = clickedNode;
+                    _lastMousePos = pos;
+                    GraphCanvas.CaptureMouse();
+                    Cursor = Cursors.SizeAll; // تغییر نشانگر به حالت جابجایی
                 }
                 else
                 {
+                    // شروع جابجایی صفحه (Pan)
                     vm.SelectedNode = null;
-                    _isDragging = true;
-                    _lastMousePos = e.GetPosition(this);
+                    _isPanning = true;
+                    _lastMousePos = pos;
                     GraphCanvas.CaptureMouse();
+                    Cursor = Cursors.ScrollAll; // تغییر نشانگر به حالت اسکرول
                 }
                 GraphCanvas.InvalidateVisual();
             }
@@ -304,12 +317,27 @@ public partial class GraphView : UserControl
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
             var pos = e.GetPosition(this);
+            // محاسبه مختصات برای تولتیپ
             float worldX = ((float)pos.X - _offset.X) / _scale;
             float worldY = ((float)pos.Y - _offset.Y) / _scale;
             _lastMouseWorldPos = new SKPoint(worldX, worldY);
 
-            if (_isDragging)
+            if (_draggedNode != null)
             {
+                // 1. جابجایی نود (Move Node)
+                // تبدیل تغییرات موس (Screen Delta) به تغییرات دنیای گراف (World Delta)
+                float deltaX = (float)(pos.X - _lastMousePos.X) / _scale;
+                float deltaY = (float)(pos.Y - _lastMousePos.Y) / _scale;
+
+                _draggedNode.X += deltaX;
+                _draggedNode.Y += deltaY;
+
+                _lastMousePos = pos;
+                GraphCanvas.InvalidateVisual();
+            }
+            else if (_isPanning)
+            {
+                // 2. جابجایی صفحه (Pan Canvas)
                 var deltaX = (float)(pos.X - _lastMousePos.X);
                 var deltaY = (float)(pos.Y - _lastMousePos.Y);
                 _offset.X += deltaX;
@@ -319,6 +347,7 @@ public partial class GraphView : UserControl
             }
             else
             {
+                // 3. حالت عادی (Hover)
                 // Hit Testing for Hover Effect
                 var vm = DataContext as GraphViewModel;
                 if (vm != null && vm.Nodes != null)
@@ -326,7 +355,15 @@ public partial class GraphView : UserControl
                     var foundNode = FindNodeAt(vm.Nodes, worldX, worldY);
                     
                     bool needsRedraw = false;
-                    if (foundNode != _hoveredNode) { _hoveredNode = foundNode; needsRedraw = true; }
+                    if (foundNode != _hoveredNode) 
+                    { 
+                        _hoveredNode = foundNode; 
+                        needsRedraw = true; 
+                    }
+
+                    // تغییر نشانگر موس برای راهنمایی کاربر
+                    if (_hoveredNode != null) Cursor = Cursors.Hand;
+                    else Cursor = Cursors.Arrow;
 
                     // Only check edges if no node is hovered
                     if (_hoveredNode == null)
@@ -343,8 +380,10 @@ public partial class GraphView : UserControl
 
         private void OnMouseUp(object sender, MouseButtonEventArgs e)
         {
-            _isDragging = false;
+            _isPanning = false;
+            _draggedNode = null;
             GraphCanvas.ReleaseMouseCapture();
+            Cursor = Cursors.Arrow; // بازگشت نشانگر به حالت عادی
         }
 
         private void OnMouseWheel(object sender, MouseWheelEventArgs e)
