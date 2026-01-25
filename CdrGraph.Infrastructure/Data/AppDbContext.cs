@@ -5,11 +5,15 @@ namespace CdrGraph.Infrastructure.Data;
 public class AppDbContext : DbContext
 {
     public DbSet<ProjectMetadata> Projects { get; set; }
+    // جدول جدید برای رکوردهای خام
+    public DbSet<CdrEntity> CdrRecords { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // دیتابیس در کنار فایل اجرایی ساخته می‌شود
-        optionsBuilder.UseSqlite("Data Source=cdrgraph.db");
+        optionsBuilder.UseSqlite("Data Source=cdr_analysis.db");
+            
+        // تنظیمات حیاتی برای سرعت بالا در SQLite
+        optionsBuilder.EnableSensitiveDataLogging(false);
     }
 }
 

@@ -11,8 +11,6 @@ public class ImportViewModel : ObservableObject
     private readonly IExcelReaderService _excelService;
     private readonly MainViewModel _mainViewModel;
 
-
-    // لیست فایل‌های انتخاب شده
     public ObservableCollection<ExcelFileWrapper> ImportFiles { get; } = new();
 
     private ExcelFileWrapper _selectedFile;
@@ -39,6 +37,16 @@ public class ImportViewModel : ObservableObject
         get => _isAnalyzing;
         set => SetProperty(ref _isAnalyzing, value);
     }
+
+    // --- ویژگی جدید: محدودیت تعداد نودها ---
+    private int _maxNodeLimit = 2000; // مقدار پیش‌فرض
+
+    public int MaxNodeLimit
+    {
+        get => _maxNodeLimit;
+        set => SetProperty(ref _maxNodeLimit, value);
+    }
+    // ---------------------------------------
 
     public RelayCommand AddFileCommand { get; }
     public RelayCommand RemoveFileCommand { get; }
@@ -91,18 +99,12 @@ public class ImportViewModel : ObservableObject
             wrapper.DetectedHeaders.Clear();
             foreach (var h in headers) wrapper.DetectedHeaders.Add(h);
 
-            // تشخیص خودکار ستون‌ها
             wrapper.SelectedSource =
                 headers.FirstOrDefault(h => h.ToLower().Contains("source") || h.ToLower().Contains("from"));
             wrapper.SelectedTarget =
                 headers.FirstOrDefault(h => h.ToLower().Contains("target") || h.ToLower().Contains("to"));
             wrapper.SelectedDuration =
                 headers.FirstOrDefault(h => h.ToLower().Contains("duration") || h.ToLower().Contains("time"));
-
-            wrapper.SelectedDate =
-                headers.FirstOrDefault(h => h.ToLower().Contains("date") || h.ToLower().Contains("تاریخ"));
-            wrapper.SelectedTime =
-                headers.FirstOrDefault(h => h.ToLower().Contains("time") || h.ToLower().Contains("ساعت"));
 
             wrapper.StatusText = "Ready";
             wrapper.StatusColor = "LightGreen";
@@ -117,12 +119,16 @@ public class ImportViewModel : ObservableObject
     private async Task AnalyzeAllAsync()
     {
         IsAnalyzing = true;
-        await _mainViewModel.StartMultiFileGraphProcessingAsync(ImportFiles.ToList());
+        AnalyzeCommand.RaiseCanExecuteChanged();
+
+        // ارسال MaxNodeLimit به متد پردازش در MainViewModel
+        await _mainViewModel.StartMultiFileGraphProcessingAsync(ImportFiles.ToList(), MaxNodeLimit);
+
         IsAnalyzing = false;
+        AnalyzeCommand.RaiseCanExecuteChanged();
     }
 }
 
-// کلاس کمکی برای هر فایل در لیست
 public class ExcelFileWrapper : ObservableObject
 {
     public string FilePath { get; }
@@ -153,6 +159,7 @@ public class ExcelFileWrapper : ObservableObject
         set => SetProperty(ref _selectedDuration, value);
     }
 
+    // ستون‌های جدید اختیاری
     private string _selectedDate;
 
     public string SelectedDate

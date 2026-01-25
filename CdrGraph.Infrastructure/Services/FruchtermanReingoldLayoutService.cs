@@ -19,8 +19,13 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
         {
             if (nodes == null || !nodes.Any()) return;
 
+            // *** بهینه‌سازی: اگر تعداد نود زیاد است، تکرار را کم کن ***
+            int iterations = MaxIterations;
+            if (nodes.Count > 1000) iterations = 50; // تکرار کمتر برای سرعت بیشتر
+            if (nodes.Count > 3000) iterations = 10; // فقط باز کردن اولیه
+            
+            
             var rand = new Random();
-
             // 1. پخش تصادفی نودها (بسیار مهم: اگر این کار انجام نشود، نودها روی هم می‌مانند)
             foreach (var node in nodes)
             {
@@ -38,7 +43,7 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
             var displacements = nodes.ToDictionary(n => n.Id, n => new Vector2(0, 0));
 
             // 2. حلقه اصلی الگوریتم
-            for (int i = 0; i < MaxIterations; i++)
+            for (int i = 0; i < iterations; i++)
             {
                 if (cancellationToken.IsCancellationRequested) break;
 

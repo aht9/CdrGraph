@@ -29,7 +29,7 @@ public partial class App : Application
                 services.AddDbContext<AppDbContext>();
                 services.AddSingleton<IExcelReaderService, ExcelReaderService>();
                 services.AddSingleton<IGraphLayoutService, FruchtermanReingoldLayoutService>();
-
+                services.AddSingleton<CdrDataService>(); 
                 // 2. ثبت ViewModel ها
                 // MainViewModel وضعیت کلی برنامه را نگه می‌دارد پس Singleton است
                 services.AddSingleton<MainViewModel>();

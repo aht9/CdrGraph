@@ -6,45 +6,42 @@
              xmlns:vm="clr-namespace:CdrGraph.Desktop.ViewModels"
              d:DataContext="{d:DesignInstance Type=vm:ImportViewModel}"
              mc:Ignorable="d" 
-             d:DesignHeight="500" d:DesignWidth="900">
+             d:DesignHeight="600" d:DesignWidth="900">
 
     <UserControl.Resources>
-        <!-- تعریف کانورتر برای مدیریت نمایش/عدم نمایش -->
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     </UserControl.Resources>
 
     <Grid Margin="20">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- عنوان -->
-            <RowDefinition Height="*"/>    <!-- محتوای اصلی (لیست و تنظیمات) -->
-            <RowDefinition Height="Auto"/> <!-- دکمه نهایی -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,20">
             <TextBlock Text="Multi-Source CDR Import" FontSize="24" FontWeight="Bold" Foreground="#E0E0E0"/>
-            <TextBlock Text="Add multiple Excel files and map columns for each one individually." Foreground="Gray" Margin="0,5,0,0"/>
+            <TextBlock Text="Add Excel files and map columns. Date/Time columns are optional but recommended." Foreground="Gray" Margin="0,5,0,0"/>
         </StackPanel>
 
         <!-- Main Content -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300"/> <!-- لیست فایل‌ها -->
-                <ColumnDefinition Width="20"/>  <!-- فاصله -->
-                <ColumnDefinition Width="*"/>   <!-- تنظیمات -->
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- LEFT: File List Area -->
+            <!-- LEFT: File List -->
             <DockPanel Grid.Column="0">
                 <TextBlock DockPanel.Dock="Top" Text="Source Files" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,5"/>
                 
-                <!-- دکمه‌های افزودن و حذف -->
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
                     <Button Content="Remove" Command="{Binding RemoveFileCommand}" Margin="0,0,10,0" Padding="10,5" Background="#C42B1C" Foreground="White" BorderThickness="0"/>
                     <Button Content="+ Add File" Command="{Binding AddFileCommand}" Padding="15,5" Background="#2E8B57" Foreground="White" BorderThickness="0"/>
                 </StackPanel>
 
-                <!-- لیست فایل‌ها -->
                 <ListBox ItemsSource="{Binding ImportFiles}" SelectedItem="{Binding SelectedFile}" 
                          Background="#252526" BorderBrush="#3E3E42" Foreground="White">
                     <ListBox.ItemTemplate>
@@ -62,16 +59,13 @@
             <!-- RIGHT: Mapping Area -->
             <Border Grid.Column="2" Background="#2D2D30" CornerRadius="5" Padding="15">
                 <Grid>
-                    <!-- حالت خالی (وقتی فایلی انتخاب نشده) -->
                     <TextBlock Text="Select a file from the list to configure columns." 
                                Foreground="Gray" HorizontalAlignment="Center" VerticalAlignment="Center"
                                Visibility="{Binding IsFileSelected, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}"/>
 
-                    <!-- کنترل‌های مپینگ (وقتی فایل انتخاب شده) -->
                     <StackPanel Visibility="{Binding IsFileSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <TextBlock Text="Column Mapping Configuration" FontSize="16" Foreground="White" Margin="0,0,0,15"/>
                         
-                        <!-- نکته مهم: اینجا DataContext ما SelectedFile است -->
                         <Grid DataContext="{Binding SelectedFile}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -81,28 +75,29 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/> <!-- Date -->
+                                <RowDefinition Height="Auto"/> <!-- Time -->
                             </Grid.RowDefinitions>
 
-                            <!-- Source -->
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Number:" VerticalAlignment="Center" Foreground="#CCC" Margin="0,0,10,15"/>
-                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,15"
-                                      ItemsSource="{Binding DetectedHeaders}" 
-                                      SelectedItem="{Binding SelectedSource}"/>
+                            <!-- Mandatory Fields -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Number *:" VerticalAlignment="Center" Foreground="#CCC" Margin="0,0,10,15"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,15" ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedSource}"/>
 
-                            <!-- Target -->
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Target Number:" VerticalAlignment="Center" Foreground="#CCC" Margin="0,0,10,15"/>
-                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,15"
-                                      ItemsSource="{Binding DetectedHeaders}" 
-                                      SelectedItem="{Binding SelectedTarget}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Target Number *:" VerticalAlignment="Center" Foreground="#CCC" Margin="0,0,10,15"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,15" ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedTarget}"/>
 
-                            <!-- Duration -->
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Duration / Weight:" VerticalAlignment="Center" Foreground="#CCC" Margin="0,0,10,0"/>
-                            <ComboBox Grid.Row="2" Grid.Column="1" 
-                                      ItemsSource="{Binding DetectedHeaders}" 
-                                      SelectedItem="{Binding SelectedDuration}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Duration / Weight:" VerticalAlignment="Center" Foreground="#CCC" Margin="0,0,10,15"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,15" ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedDuration}"/>
+
+                            <!-- Optional Fields -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Date Column (Opt):" VerticalAlignment="Center" Foreground="#AAA" Margin="0,0,10,15"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,15" ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedDate}"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Time Column (Opt):" VerticalAlignment="Center" Foreground="#AAA" Margin="0,0,10,0"/>
+                            <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedTime}"/>
                         </Grid>
 
-                        <TextBlock Text="* Rows contain metadata for click details." Foreground="Gray" FontSize="11" Margin="0,20,0,0" FontStyle="Italic"/>
+                        <TextBlock Text="* Mandatory fields. Optional fields help with filtering and detailed tooltips." Foreground="Gray" FontSize="11" Margin="0,20,0,0" FontStyle="Italic"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -110,14 +105,27 @@
 
         <!-- Footer: Generate Button -->
         <StackPanel Grid.Row="2" Margin="0,20,0,0">
+            <!-- تنظیمات محدودیت نود -->
+            <Border Background="#252526" CornerRadius="5" Padding="10" Margin="0,0,0,15">
+                <StackPanel>
+                    <DockPanel LastChildFill="False">
+                        <TextBlock Text="Performance Limit (Max Nodes):" Foreground="Silver" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding MaxNodeLimit}" Foreground="#007ACC" FontWeight="Bold" DockPanel.Dock="Right" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Slider Minimum="100" Maximum="5000" Value="{Binding MaxNodeLimit}" 
+                            IsSnapToTickEnabled="True" TickFrequency="100" Margin="0,5,0,0"/>
+                    <TextBlock Text="Lower values = Faster rendering. Higher values = More detail but slower." 
+                               FontSize="10" Foreground="Gray" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- دکمه آنالیز -->
             <Button Content="Analyze &amp; Build Global Graph" 
                     Command="{Binding AnalyzeCommand}" 
                     Height="45" FontSize="14"
                     Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0">
                 <Button.Resources>
-                    <Style TargetType="Border">
-                        <Setter Property="CornerRadius" Value="5"/>
-                    </Style>
+                    <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
                 </Button.Resources>
             </Button>
 

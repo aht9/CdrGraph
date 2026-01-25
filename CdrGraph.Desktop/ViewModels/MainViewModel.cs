@@ -2,6 +2,7 @@
 using CdrGraph.Core.Common;
 using CdrGraph.Core.Domain.Models;
 using CdrGraph.Core.Interfaces;
+using CdrGraph.Infrastructure.Services;
 
 namespace CdrGraph.Desktop.ViewModels;
 
@@ -9,7 +10,7 @@ public class MainViewModel : ObservableObject
 {
     private readonly IExcelReaderService _excelService;
     private readonly IGraphLayoutService _layoutService;
-
+    private readonly CdrDataService _dataService;
     private object _currentView;
 
     public object CurrentView
@@ -18,55 +19,116 @@ public class MainViewModel : ObservableObject
         set => SetProperty(ref _currentView, value);
     }
 
-    public MainViewModel(IExcelReaderService excelService, IGraphLayoutService layoutService)
+    public MainViewModel(IExcelReaderService excelService, IGraphLayoutService layoutService,
+        CdrDataService dataService)
     {
         _excelService = excelService;
         _layoutService = layoutService;
+        _dataService = dataService;
+
+        // شروع اولیه
         CurrentView = new ImportViewModel(_excelService, this);
     }
 
-    public async Task StartMultiFileGraphProcessingAsync(List<ExcelFileWrapper> files)
+    public async Task StartMultiFileGraphProcessingAsync(List<ExcelFileWrapper> files, int userMaxNodes)
     {
-        try
+        await Task.Run(async () =>
         {
-            var allRecords = new List<CdrRecord>();
-
-            // 1. خواندن تمام فایل‌ها
-            foreach (var file in files)
+            try
             {
-                if (string.IsNullOrEmpty(file.SelectedSource) || string.IsNullOrEmpty(file.SelectedTarget)) continue;
+                // 1. پاکسازی دیتابیس
+                await _dataService.ClearAllDataAsync();
 
-                var mapping = new ColumnMapping
+                // 2. پردازش و درج فایل‌ها
+                foreach (var file in files)
                 {
-                    SourceColumn = file.SelectedSource,
-                    TargetColumn = file.SelectedTarget,
-                    DurationColumn = file.SelectedDuration
-                };
+                    if (string.IsNullOrEmpty(file.SelectedSource) || string.IsNullOrEmpty(file.SelectedTarget))
+                        continue;
 
-                // فرض: متد ParseFileAsync در سرویس باید طوری باشد که نام فایل و متادیتا را هم پر کند
-                var records = await _excelService.ParseFileAsync(file.FilePath, mapping);
-                allRecords.AddRange(records);
+                    var mapping = new ColumnMapping
+                    {
+                        SourceColumn = file.SelectedSource,
+                        TargetColumn = file.SelectedTarget,
+                        DurationColumn = file.SelectedDuration,
+                        DateColumn = file.SelectedDate,
+                        TimeColumn = file.SelectedTime
+                    };
+
+                    var records = await _excelService.ParseFileAsync(file.FilePath, mapping);
+                    await _dataService.BulkInsertFastAsync(records);
+
+                    records = null;
+                    GC.Collect();
+                }
+
+                // 3. دریافت داده‌های خام از دیتابیس
+                var nodes = await _dataService.GetAggregatedNodesAsync();
+                var edges = await _dataService.GetAggregatedEdgesAsync();
+
+                if (!nodes.Any())
+                {
+                    Application.Current.Dispatcher.Invoke(() => MessageBox.Show("No data found."));
+                    return;
+                }
+
+                // *** منطق فیلترینگ بر اساس انتخاب کاربر ***
+                // اگر تعداد نودها بیشتر از حد انتخابی کاربر بود، فیلتر کن
+                if (nodes.Count > userMaxNodes)
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                        MessageBox.Show(
+                            $"Found {nodes.Count} nodes. Filtering to top {userMaxNodes} active numbers based on your setting.",
+                            "Performance Optimization"));
+
+                    // الف) انتخاب نودهای مهم (پرتماس‌ترین‌ها)
+                    var topNodes = nodes.OrderByDescending(n => n.TotalCalls)
+                        .Take(userMaxNodes)
+                        .ToList();
+
+                    // ب) ساخت HashSet برای جستجوی سریع IDها
+                    var topNodeIds = new HashSet<string>(topNodes.Select(n => n.Id));
+
+                    // ج) فیلتر کردن یال‌ها (فقط خطوطی که هر دو سرشان جزو تاپ‌ها هستند)
+                    var filteredEdges = edges
+                        .Where(e => topNodeIds.Contains(e.SourceId) && topNodeIds.Contains(e.TargetId))
+                        .ToList();
+
+                    // جایگزینی لیست اصلی با لیست فیلتر شده
+                    nodes = topNodes;
+                    edges = filteredEdges;
+                }
+
+                // 4. محاسبه لی‌اوت
+                await _layoutService.ApplyLayoutAsync(nodes, edges);
+
+                // 5. نمایش گراف
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    CurrentView = new GraphViewModel(nodes, edges, this, _dataService);
+                });
+
+                GC.Collect();
             }
-
-            if (!allRecords.Any())
+            catch (Exception ex)
             {
-                MessageBox.Show("No records found.");
-                return;
+                Application.Current.Dispatcher.Invoke(() => MessageBox.Show($"Error: {ex.Message}"));
             }
+        });
+    }
 
-            // 2. تجمیع داده‌ها
-            var (nodes, edges) = ProcessDataAggregated(allRecords);
+    // متد جدید برای بازنشانی برنامه
+    public void ResetApplication()
+    {
+        // 1. حذف ویو فعلی (گراف سنگین)
+        CurrentView = null;
 
-            // 3. محاسبه لی‌اوت
-            await _layoutService.ApplyLayoutAsync(nodes, edges);
+        // 2. درخواست صریح از Garbage Collector برای خالی کردن رم
+        // (در برنامه‌های پردازش داده سنگین این کار توجیه‌پذیر است)
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
 
-            // 4. نمایش گراف
-            CurrentView = new GraphViewModel(nodes, edges);
-        }
-        catch (System.Exception ex)
-        {
-            MessageBox.Show($"Error: {ex.Message}");
-        }
+        // 3. ساختن ویو جدید برای شروع مجدد
+        CurrentView = new ImportViewModel(_excelService, this);
     }
 
     private (List<GraphNode> nodes, List<GraphEdge> edges) ProcessDataAggregated(List<CdrRecord> records)
@@ -78,7 +140,6 @@ public class MainViewModel : ObservableObject
         {
             if (string.IsNullOrWhiteSpace(r.SourceNumber) || string.IsNullOrWhiteSpace(r.TargetNumber)) continue;
 
-            // مدیریت نودها
             if (!nodeDict.ContainsKey(r.SourceNumber)) nodeDict[r.SourceNumber] = new GraphNode(r.SourceNumber);
             if (!nodeDict.ContainsKey(r.TargetNumber)) nodeDict[r.TargetNumber] = new GraphNode(r.TargetNumber);
 
@@ -87,12 +148,9 @@ public class MainViewModel : ObservableObject
 
             sNode.AddMetrics(1, r.DurationSeconds);
             tNode.AddMetrics(1, r.DurationSeconds);
-
-            // افزودن رکورد به لیست جزئیات نودها
             sNode.AddRecord(r);
             tNode.AddRecord(r);
 
-            // مدیریت یال‌ها (بدون جهت: A_B == B_A)
             var id1 = string.Compare(r.SourceNumber, r.TargetNumber) < 0 ? r.SourceNumber : r.TargetNumber;
             var id2 = string.Compare(r.SourceNumber, r.TargetNumber) < 0 ? r.TargetNumber : r.SourceNumber;
             var edgeKey = $"{id1}_{id2}";
@@ -101,7 +159,6 @@ public class MainViewModel : ObservableObject
             edgeDict[edgeKey].AddInteraction(r.DurationSeconds);
         }
 
-        // نرمال‌سازی گرافیکی
         var edges = edgeDict.Values.ToList();
         if (edges.Any())
         {
@@ -122,7 +179,4 @@ public class MainViewModel : ObservableObject
 
         return (nodes, edges);
     }
-
-    // جهت سازگاری
-    public Task StartGraphProcessingAsync(string f, ColumnMapping m) => Task.CompletedTask;
 }
