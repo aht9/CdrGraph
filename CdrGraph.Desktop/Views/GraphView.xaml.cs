@@ -1,5 +1,4 @@
-﻿
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using SkiaSharp;
@@ -12,20 +11,20 @@ namespace CdrGraph.Desktop.Views;
 
 public partial class GraphView : UserControl
 {
-    // Camera State
+    // وضعیت دوربین (Zoom/Pan)
     private float _scale = 1.0f;
     private SKPoint _offset = new SKPoint(0, 0);
 
-    // Mouse State
+    // وضعیت موس
     private bool _isDragging;
     private Point _lastMousePos;
     private SKPoint _lastMouseWorldPos;
 
-    // Hover State
+    // وضعیت هاور (Hover)
     private GraphEdge _hoveredEdge;
     private GraphNode _hoveredNode;
 
-    // Paints (Cached for performance)
+    // قلم‌های گرافیکی (Cached Paints)
     private readonly SKPaint _edgePaint = new SKPaint
     {
         Style = SKPaintStyle.Stroke,
@@ -48,17 +47,26 @@ public partial class GraphView : UserControl
         TextAlign = SKTextAlign.Center
     };
 
+    // استایل تولتیپ
     private readonly SKPaint _tooltipBgPaint = new SKPaint
     {
-        Color = SKColors.Black.WithAlpha(200),
+        Color = SKColors.Black.WithAlpha(230),
         Style = SKPaintStyle.Fill
+    };
+
+    private readonly SKPaint _tooltipBorderPaint = new SKPaint
+    {
+        Color = SKColors.White.WithAlpha(100),
+        Style = SKPaintStyle.Stroke,
+        StrokeWidth = 1
     };
 
     private readonly SKPaint _tooltipTextPaint = new SKPaint
     {
         Color = SKColors.White,
-        TextSize = 14,
-        IsAntialias = true
+        TextSize = 13,
+        IsAntialias = true,
+        Typeface = SKTypeface.FromFamilyName("Segoe UI")
     };
 
     public GraphView()
@@ -66,54 +74,122 @@ public partial class GraphView : UserControl
         InitializeComponent();
     }
 
-    // --- Rendering Loop ---
+    // هندلر دکمه خروجی (رفع خطای قبلی)
+    private void ExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        ExportGraph();
+    }
+
+    // --- Rendering Loop (حلقه رسم) ---
 
     private void OnPaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
         var canvas = e.Surface.Canvas;
         var vm = DataContext as GraphViewModel;
 
-        // 1. Clear Background
+        // 1. پاک کردن صفحه
         canvas.Clear(SKColor.Parse("#1E1E1E"));
 
         if (vm == null || vm.Nodes == null) return;
 
-        // 2. Apply Camera Transform
+        // *** DPI FIX: محاسبه ضریب تراکم پیکسلی ***
+        // این خط مشکل کلیک را حل می‌کند
+        float density = 1.0f;
+        if (GraphCanvas.ActualWidth > 0)
+        {
+            density = (float)(e.Info.Width / GraphCanvas.ActualWidth);
+        }
+
+        // 2. اعمال تنظیمات دوربین
         canvas.Save();
+
+        // اول اسکیل DPI را اعمال می‌کنیم
+        canvas.Scale(density);
+        // سپس تنظیمات دوربین کاربر
         canvas.Translate(_offset.X, _offset.Y);
         canvas.Scale(_scale);
 
-        // 3. Draw The Graph (Reusable Logic)
+        // 3. رسم گراف
         DrawGraph(canvas, vm.Nodes, vm.Edges);
+
+        // رسم هایلایت دور نود انتخاب شده
+        if (vm.SelectedNode != null)
+        {
+            // ضخامت خط انتخاب را با زوم تنظیم می‌کنیم تا خیلی کلفت نشود
+            float strokeWidth = 3f / _scale;
+            using (var selectionPaint = new SKPaint
+                   {
+                       Style = SKPaintStyle.Stroke, Color = SKColors.Yellow, StrokeWidth = strokeWidth,
+                       IsAntialias = true
+                   })
+            {
+                float radius = 10 + (float)(vm.SelectedNode.Weight * 2);
+                canvas.DrawCircle(vm.SelectedNode.X, vm.SelectedNode.Y, radius + 4, selectionPaint);
+            }
+        }
 
         canvas.Restore();
 
-        // 4. Draw Overlays (Tooltips) - Not affected by Zoom/Pan logic directly, but positioned relative to mouse
-        // Note: Tooltip coordinates are in World Space, so we need to project them or just draw near mouse screen pos.
-        // Here we use the World Position calculated in MouseMove but mapped back to screen for simplicity, 
-        // OR just draw based on current mouse screen position if available. 
-        // Better: Draw based on _lastMouseWorldPos transformed to screen.
-
+        // 4. رسم تولتیپ‌ها (Overlays)
         if (_hoveredNode != null)
         {
             var screenPos = WorldToScreen(_lastMouseWorldPos);
-            DrawTooltip(canvas, screenPos.X, screenPos.Y,
-                $"Number: {_hoveredNode.Id}\nCalls: {_hoveredNode.TotalCalls}\nDuration: {_hoveredNode.TotalDurationMinutes:N1} min");
+            string info = GetNodeInfo(_hoveredNode);
+            // ضرب در density مهم است چون روی سطح فیزیکی می‌کشیم
+            DrawTooltip(canvas, screenPos.X * density, screenPos.Y * density, info);
         }
         else if (_hoveredEdge != null)
         {
             var screenPos = WorldToScreen(_lastMouseWorldPos);
-            DrawTooltip(canvas, screenPos.X, screenPos.Y,
-                $"Link: {_hoveredEdge.CallCount} Calls\n{_hoveredEdge.TotalDurationMinutes:N1} min");
+            string info = GetEdgeInfo(_hoveredEdge, vm);
+            DrawTooltip(canvas, screenPos.X * density, screenPos.Y * density, info);
         }
     }
 
-    /// <summary>
-    /// Core drawing logic, separated to be used by both Screen Rendering and PDF Export.
-    /// </summary>
+    // --- Helper Methods for Info Extraction ---
+
+    private string GetNodeInfo(GraphNode node)
+    {
+        return $"Number: {node.Id}\n" +
+               $"Total Calls: {node.TotalCalls}\n" +
+               $"Total Duration: {node.TotalDurationMinutes:N1} min";
+    }
+
+    private string GetEdgeInfo(GraphEdge edge, GraphViewModel vm)
+    {
+        string baseInfo = $"Calls: {edge.CallCount}\nDuration: {edge.TotalDurationMinutes:N1} min";
+
+        // پیدا کردن اطلاعات آخرین تماس از داده‌های خام
+        var sourceNode = vm.Nodes.FirstOrDefault(n => n.Id == edge.SourceId);
+
+        if (sourceNode != null && sourceNode.RelatedRecords.Any())
+        {
+            var relevantRecord = sourceNode.RelatedRecords
+                .Where(r => r.TargetNumber == edge.TargetId || r.SourceNumber == edge.TargetId)
+                .LastOrDefault(); // آخرین رکورد (یا می‌توان بر اساس تاریخ سورت کرد)
+
+            if (relevantRecord != null)
+            {
+                // نمایش تاریخ و ساعت اگر موجود باشد
+                string timeStr = $"{relevantRecord.DateStr} {relevantRecord.TimeStr}".Trim();
+                if (!string.IsNullOrEmpty(timeStr))
+                {
+                    baseInfo += $"\nLast: {timeStr}";
+                }
+
+                if (!string.IsNullOrEmpty(relevantRecord.OriginFileName))
+                {
+                    baseInfo += $"\nFile: {relevantRecord.OriginFileName}";
+                }
+            }
+        }
+
+        return baseInfo;
+    }
+
     private void DrawGraph(SKCanvas canvas, List<GraphNode> nodes, List<GraphEdge> edges)
     {
-        // A) Draw Edges
+        // A) رسم خطوط
         foreach (var edge in edges)
         {
             var s = nodes.FirstOrDefault(n => n.Id == edge.SourceId);
@@ -135,7 +211,7 @@ public partial class GraphView : UserControl
             }
         }
 
-        // B) Draw Nodes
+        // B) رسم نودها
         foreach (var node in nodes)
         {
             float radius = 10 + (float)(node.Weight * 2);
@@ -151,7 +227,7 @@ public partial class GraphView : UserControl
                 canvas.DrawCircle(node.X, node.Y, radius, _nodePaint);
             }
 
-            // Draw Label if zoomed in or hovered
+            // رسم متن فقط اگر زوم کافی باشد یا نود هاور شده باشد
             if (_scale > 0.6f || node == _hoveredNode)
             {
                 canvas.DrawText(node.Id, node.X, node.Y + radius + 15, _textPaint);
@@ -159,21 +235,48 @@ public partial class GraphView : UserControl
         }
     }
 
-    // --- Interaction Logic ---
+    // --- Interaction Logic (ماوس و کلیک) ---
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
+        var vm = DataContext as GraphViewModel;
+        if (vm == null) return;
+
         if (e.ChangedButton == MouseButton.Left)
         {
-            _isDragging = true;
-            _lastMousePos = e.GetPosition(this);
-            GraphCanvas.CaptureMouse();
-        }
-        else if (e.ChangedButton == MouseButton.Right)
-        {
-            // Right click context menu could go here
-            // For now, let's trigger Export on Right Click (Temp) or use a Button in UI
-            // ExportGraph();
+            var pos = e.GetPosition(this);
+            // تبدیل مختصات کلیک به مختصات گراف
+            float worldX = ((float)pos.X - _offset.X) / _scale;
+            float worldY = ((float)pos.Y - _offset.Y) / _scale;
+
+            GraphNode clickedNode = null;
+
+            // جستجو برای نود کلیک شده
+            for (int i = vm.Nodes.Count - 1; i >= 0; i--)
+            {
+                var n = vm.Nodes[i];
+                float dist = (float)Math.Sqrt(Math.Pow(n.X - worldX, 2) + Math.Pow(n.Y - worldY, 2));
+
+                if (dist < (15 + n.Weight * 2))
+                {
+                    clickedNode = n;
+                    break;
+                }
+            }
+
+            if (clickedNode != null)
+            {
+                vm.SelectedNode = clickedNode;
+            }
+            else
+            {
+                vm.SelectedNode = null;
+                _isDragging = true;
+                _lastMousePos = e.GetPosition(this);
+                GraphCanvas.CaptureMouse();
+            }
+
+            GraphCanvas.InvalidateVisual();
         }
     }
 
@@ -181,7 +284,6 @@ public partial class GraphView : UserControl
     {
         var pos = e.GetPosition(this);
 
-        // Calculate World Position
         float worldX = ((float)pos.X - _offset.X) / _scale;
         float worldY = ((float)pos.Y - _offset.Y) / _scale;
         _lastMouseWorldPos = new SKPoint(worldX, worldY);
@@ -210,8 +312,7 @@ public partial class GraphView : UserControl
         GraphNode foundNode = null;
         GraphEdge foundEdge = null;
 
-        // Check Nodes
-        // Reverse loop to check top nodes first
+        // بررسی برخورد با نودها
         for (int i = vm.Nodes.Count - 1; i >= 0; i--)
         {
             var n = vm.Nodes[i];
@@ -228,7 +329,7 @@ public partial class GraphView : UserControl
             needsRedraw = true;
         }
 
-        // Check Edges (only if no node is hovered)
+        // بررسی برخورد با خطوط (اگر نودی انتخاب نشده بود)
         if (_hoveredNode == null)
         {
             foreach (var edge in vm.Edges)
@@ -283,15 +384,16 @@ public partial class GraphView : UserControl
         GraphCanvas.InvalidateVisual();
     }
 
-    // --- Export Logic ---
+    // --- Export Logic (اصلاح شده: Auto-Fit) ---
 
-    /// <summary>
-    /// This method should be called from UI (e.g. Button Click event in Code Behind)
-    /// </summary>
     public void ExportGraph()
     {
         var vm = DataContext as GraphViewModel;
-        if (vm == null) return;
+        if (vm == null || vm.Nodes == null || !vm.Nodes.Any())
+        {
+            MessageBox.Show("No graph data to export.", "Warning");
+            return;
+        }
 
         var saveDialog = new SaveFileDialog
         {
@@ -303,27 +405,45 @@ public partial class GraphView : UserControl
         {
             try
             {
-                // 1. Capture High-Res Image of the Graph
-                // We create a new surface with fixed size to ensure high quality regardless of window size
-                int width = 2000;
-                int height = 2000;
+                // 1. محاسبه ابعاد واقعی گراف (Bounding Box)
+                float minX = vm.Nodes.Min(n => n.X);
+                float minY = vm.Nodes.Min(n => n.Y);
+                float maxX = vm.Nodes.Max(n => n.X);
+                float maxY = vm.Nodes.Max(n => n.Y);
 
-                // Fit graph to bounds logic could be added here, 
-                // for now we just center it or use default coordinates if they fit.
-                // Better: Calculate bounding box of all nodes and scale/translate to fit 2000x2000.
+                // اضافه کردن حاشیه (Padding)
+                float padding = 50f;
+                float graphWidth = maxX - minX + (padding * 2);
+                float graphHeight = maxY - minY + (padding * 2);
 
-                using var surface = SKSurface.Create(new SKImageInfo(width, height));
+                // مرکز گراف
+                float graphCenterX = (minX + maxX) / 2;
+                float graphCenterY = (minY + maxY) / 2;
+
+                // ابعاد تصویر خروجی
+                int targetWidth = 2000;
+                int targetHeight = 2000;
+
+                // محاسبه مقیاس مناسب (Scale)
+                float scaleX = targetWidth / graphWidth;
+                float scaleY = targetHeight / graphHeight;
+                float exportScale = Math.Min(scaleX, scaleY); // حفظ نسبت ابعاد
+
+                // 2. ساخت تصویر با کیفیت بالا
+                using var surface = SKSurface.Create(new SKImageInfo(targetWidth, targetHeight));
                 var canvas = surface.Canvas;
-                canvas.Clear(SKColors.White); // White background for print
+                canvas.Clear(SKColors.White); // پس‌زمینه سفید برای چاپ
 
-                // Center the graph in the image
-                // Simple centering: Translate to center
-                canvas.Translate(width / 2, height / 2);
-                // Assuming nodes are centered around 0,0 or we need to find center.
-                // For now, let's just use a safe scale and draw.
-                canvas.Translate(-1000, -1000); // Adjust based on your coordinate system range
+                canvas.Save();
 
-                // Draw clean graph (without hover effects)
+                // انتقال مبدا به مرکز تصویر
+                canvas.Translate(targetWidth / 2, targetHeight / 2);
+                // اعمال مقیاس
+                canvas.Scale(exportScale);
+                // انتقال مرکز گراف به مبدا (0,0)
+                canvas.Translate(-graphCenterX, -graphCenterY);
+
+                // رسم گراف تمیز (بدون هاور)
                 var tempNode = _hoveredNode;
                 _hoveredNode = null;
                 var tempEdge = _hoveredEdge;
@@ -331,15 +451,16 @@ public partial class GraphView : UserControl
 
                 DrawGraph(canvas, vm.Nodes, vm.Edges);
 
-                // Restore hover state
                 _hoveredNode = tempNode;
                 _hoveredEdge = tempEdge;
+
+                canvas.Restore();
 
                 using var image = surface.Snapshot();
                 using var data = image.Encode(SKEncodedImageFormat.Png, 100);
                 var imageBytes = data.ToArray();
 
-                // 2. Generate PDF
+                // 3. تولید PDF
                 var pdfService = new CdrGraph.Infrastructure.Services.PdfReportService();
                 pdfService.GenerateReport(saveDialog.FileName, vm.Nodes, vm.Edges, imageBytes);
 
@@ -357,14 +478,22 @@ public partial class GraphView : UserControl
     private void DrawTooltip(SKCanvas canvas, float x, float y, string text)
     {
         var lines = text.Split('\n');
-        float width = 160;
+        float maxWidth = 0;
+        foreach (var line in lines)
+        {
+            float w = _tooltipTextPaint.MeasureText(line);
+            if (w > maxWidth) maxWidth = w;
+        }
+
+        float width = maxWidth + 30;
         float lineHeight = 20;
-        float height = lines.Length * lineHeight + 10;
+        float height = lines.Length * lineHeight + 15;
 
         var rect = new SKRect(x + 15, y + 15, x + 15 + width, y + 15 + height);
         canvas.DrawRoundRect(rect, 5, 5, _tooltipBgPaint);
+        canvas.DrawRoundRect(rect, 5, 5, _tooltipBorderPaint);
 
-        float textY = y + 35;
+        float textY = y + 32;
         foreach (var line in lines)
         {
             canvas.DrawText(line, x + 25, textY, _tooltipTextPaint);

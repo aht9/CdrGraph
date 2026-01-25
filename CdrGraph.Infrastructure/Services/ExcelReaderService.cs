@@ -3,27 +3,24 @@ using CdrGraph.Core.Interfaces;
 using MiniExcelLibs;
 
 namespace CdrGraph.Infrastructure.Services;
+
 public class ExcelReaderService : IExcelReaderService
 {
     public async Task<IEnumerable<string>> GetHeadersAsync(string filePath)
     {
-        // خواندن فقط سطر اول برای گرفتن هدرها
-        var columns = MiniExcel.GetColumns(filePath);
-        return await Task.FromResult(columns);
+        return MiniExcel.GetColumns(filePath);
     }
 
     public async Task<IEnumerable<CdrRecord>> ParseFileAsync(string filePath, ColumnMapping mapping)
     {
-        // استفاده از QueryAsync برای خواندن خط به خط (Lazy Loading) برای مدیریت حافظه
         var rows = await MiniExcel.QueryAsync(filePath);
         var records = new List<CdrRecord>();
+        string fileName = System.IO.Path.GetFileName(filePath);
 
         foreach (var row in rows)
         {
-            // MiniExcel سطرها را به صورت IDictionary<string, object> برمی‌گرداند
             var rowData = (IDictionary<string, object>)row;
 
-            // استخراج داده‌ها بر اساس نام ستون‌هایی که کاربر مپ کرده است
             if (rowData.TryGetValue(mapping.SourceColumn, out var source) &&
                 rowData.TryGetValue(mapping.TargetColumn, out var target))
             {
@@ -31,16 +28,34 @@ public class ExcelReaderService : IExcelReaderService
                 {
                     SourceNumber = source?.ToString(),
                     TargetNumber = target?.ToString(),
-                    CallType = "Unknown" 
+                    OriginFileName = fileName,
+                    RawMetadata = new Dictionary<string, object>(rowData)
                 };
 
-                // پارس کردن مدت زمان (ممکن است عدد یا رشته باشد)
-                if (rowData.TryGetValue(mapping.DurationColumn, out var durationObj))
+                // پارس کردن مدت زمان
+                if (!string.IsNullOrEmpty(mapping.DurationColumn) &&
+                    rowData.TryGetValue(mapping.DurationColumn, out var durObj))
                 {
-                    if (double.TryParse(durationObj?.ToString(), out double duration))
-                    {
-                        record.DurationSeconds = duration;
-                    }
+                    if (double.TryParse(durObj?.ToString(), out double d)) record.DurationSeconds = d;
+                }
+
+                // پارس کردن تاریخ و ساعت
+                string datePart = "";
+                string timePart = "";
+
+                if (!string.IsNullOrEmpty(mapping.DateColumn) && rowData.TryGetValue(mapping.DateColumn, out var dObj))
+                    datePart = dObj?.ToString();
+
+                if (!string.IsNullOrEmpty(mapping.TimeColumn) && rowData.TryGetValue(mapping.TimeColumn, out var tObj))
+                    timePart = tObj?.ToString();
+
+                record.DateStr = datePart;
+                record.TimeStr = timePart;
+
+                // تلاش برای ساخت DateTime واقعی (برای سورت و فیلتر)
+                if (DateTime.TryParse($"{datePart} {timePart}", out DateTime dt))
+                {
+                    record.CallDateTime = dt;
                 }
 
                 records.Add(record);

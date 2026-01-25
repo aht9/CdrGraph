@@ -20,5 +20,8 @@ public class ColumnMapping
     public string SourceColumn { get; set; }
     public string TargetColumn { get; set; }
     public string DurationColumn { get; set; }
-    // Optional: Date, Type, etc.
+    
+    // اضافه شده
+    public string DateColumn { get; set; }
+    public string TimeColumn { get; set; }
 }

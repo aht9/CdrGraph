@@ -5,9 +5,12 @@ namespace CdrGraph.Infrastructure.Services;
 
 public class FruchtermanReingoldLayoutService : IGraphLayoutService
 {
-    private const int MaxIterations = 100; // تعداد تکرار الگوریتم
-    private const float InitialTemp = 100f; // دمای اولیه برای جابجایی
-    private const float Padding = 50f;
+    private const int MaxIterations = 300; // افزایش تعداد تکرار برای نتیجه بهتر
+    private const float InitialTemp = 200f;
+
+    // ابعاد بوم فرضی برای محاسبات
+    private const float CanvasWidth = 2000f;
+    private const float CanvasHeight = 2000f;
 
     public Task ApplyLayoutAsync(List<GraphNode> nodes, List<GraphEdge> edges,
         CancellationToken cancellationToken = default)
@@ -16,36 +19,43 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
         {
             if (nodes == null || !nodes.Any()) return;
 
-            // 1. تنظیم فضای اولیه (Canvas)
-            float width = 2000f;
-            float height = 2000f;
-            float area = width * height;
+            var rand = new Random();
 
-            // فرمول محاسبه فاصله ایده‌آل بین نودها (k)
-            // k = C * sqrt(area / number_of_nodes)
-            float k = (float)(0.75 * Math.Sqrt(area / nodes.Count));
+            // 1. پخش تصادفی نودها (بسیار مهم: اگر این کار انجام نشود، نودها روی هم می‌مانند)
+            foreach (var node in nodes)
+            {
+                node.X = (float)rand.NextDouble() * CanvasWidth;
+                node.Y = (float)rand.NextDouble() * CanvasHeight;
+            }
+
+            float area = CanvasWidth * CanvasHeight;
+            // فاصله ایده‌آل (k)
+            float k = (float)(Math.Sqrt(area / nodes.Count));
 
             float t = InitialTemp;
 
-            // دیکشنری برای نگهداری جابجایی‌ها در هر مرحله
+            // دیکشنری برای نگهداری جابجایی‌ها
             var displacements = nodes.ToDictionary(n => n.Id, n => new Vector2(0, 0));
 
-            // 2. شروع حلقه تکرار
+            // 2. حلقه اصلی الگوریتم
             for (int i = 0; i < MaxIterations; i++)
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
-                // الف) محاسبه نیروی دافعه (Repulsive Force) بین همه نودها
+                // الف) محاسبه نیروی دافعه (Repulsion)
+                // نودها همدیگر را دفع می‌کنند تا روی هم نیفتند
                 foreach (var v in nodes)
                 {
-                    displacements[v.Id] = new Vector2(0, 0); // ریست کردن جابجایی
+                    displacements[v.Id] = new Vector2(0, 0);
                     foreach (var u in nodes)
                     {
                         if (v == u) continue;
 
                         var delta = new Vector2(v.X - u.X, v.Y - u.Y);
                         float dist = delta.Length();
-                        if (dist < 0.01f) dist = 0.01f; // جلوگیری از تقسیم بر صفر
+
+                        // جلوگیری از تقسیم بر صفر (اگر نودها خیلی نزدیک شدند)
+                        if (dist < 0.1f) dist = 0.1f;
 
                         // فرمول دافعه: Fr = k^2 / dist
                         float force = (k * k) / dist;
@@ -55,7 +65,8 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
                     }
                 }
 
-                // ب) محاسبه نیروی جاذبه (Attractive Force) برای نودهای متصل
+                // ب) محاسبه نیروی جاذبه (Attraction)
+                // نودهای متصل همدیگر را جذب می‌کنند
                 foreach (var edge in edges)
                 {
                     var v = nodes.FirstOrDefault(n => n.Id == edge.SourceId);
@@ -64,11 +75,11 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
 
                     var delta = new Vector2(v.X - u.X, v.Y - u.Y);
                     float dist = delta.Length();
-                    if (dist < 0.01f) dist = 0.01f;
+                    if (dist < 0.1f) dist = 0.1f;
 
                     // فرمول جاذبه: Fa = dist^2 / k
-                    // * وزن تماس‌ها باعث نزدیکی بیشتر می‌شود
-                    float weightFactor = (float)(1 + edge.CalculatedWeight);
+                    // ضریب وزن: خطوط ضخیم‌تر (ارتباط بیشتر) جاذبه بیشتری دارند
+                    float weightFactor = (float)(1 + edge.CalculatedWeight * 1.5);
                     float force = (dist * dist) / k * weightFactor;
 
                     var displacement = delta.Normalize() * force;
@@ -77,31 +88,60 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
                     displacements[u.Id] += displacement;
                 }
 
-                // ج) اعمال جابجایی و کاهش دما
+                // ج) اعمال جابجایی
                 foreach (var v in nodes)
                 {
                     var disp = displacements[v.Id];
                     float dist = disp.Length();
 
-                    // محدود کردن حرکت با دما (Simulated Annealing)
+                    // محدود کردن حرکت با دما
                     float limit = Math.Min(dist, t);
                     var move = disp.Normalize() * limit;
 
                     v.X += move.X;
                     v.Y += move.Y;
-
-                    // نگه داشتن نود داخل کادر (Optional)
-                    v.X = Math.Min(width - Padding, Math.Max(Padding, v.X));
-                    v.Y = Math.Min(height - Padding, Math.Max(Padding, v.Y));
                 }
 
                 // سرد کردن سیستم
                 t *= 0.95f;
             }
+
+            // 3. مرکزگرایی (Centering)
+            // انتقال کل گراف به مرکز بوم تا کاربر مجبور به اسکرول نباشد
+            ShiftGraphToCenter(nodes, CanvasWidth, CanvasHeight);
         }, cancellationToken);
     }
 
-    // کلاس کمکی داخلی برای محاسبات برداری
+    private void ShiftGraphToCenter(List<GraphNode> nodes, float width, float height)
+    {
+        if (!nodes.Any()) return;
+
+        // پیدا کردن محدوده فعلی گراف
+        float minX = nodes.Min(n => n.X);
+        float maxX = nodes.Max(n => n.X);
+        float minY = nodes.Min(n => n.Y);
+        float maxY = nodes.Max(n => n.Y);
+
+        // محاسبه مرکز فعلی
+        float centerX = (minX + maxX) / 2;
+        float centerY = (minY + maxY) / 2;
+
+        // محاسبه مرکز مطلوب
+        float desiredX = width / 2;
+        float desiredY = height / 2;
+
+        // میزان جابجایی لازم
+        float offsetX = desiredX - centerX;
+        float offsetY = desiredY - centerY;
+
+        // اعمال جابجایی به همه نودها
+        foreach (var n in nodes)
+        {
+            n.X += offsetX;
+            n.Y += offsetY;
+        }
+    }
+
     private struct Vector2
     {
         public float X, Y;
@@ -117,7 +157,9 @@ public class FruchtermanReingoldLayoutService : IGraphLayoutService
         public Vector2 Normalize()
         {
             float len = Length();
-            return len == 0 ? new Vector2(0, 0) : new Vector2(X / len, Y / len);
+            // اگر طول صفر بود (دو نود دقیقاً روی هم)، یک جهت تصادفی کوچک برگردان
+            if (len < 0.001f) return new Vector2(0.1f, 0.1f);
+            return new Vector2(X / len, Y / len);
         }
 
         public static Vector2 operator +(Vector2 a, Vector2 b) => new Vector2(a.X + b.X, a.Y + b.Y);

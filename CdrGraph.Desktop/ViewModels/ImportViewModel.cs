@@ -9,24 +9,30 @@ namespace CdrGraph.Desktop.ViewModels;
 public class ImportViewModel : ObservableObject
 {
     private readonly IExcelReaderService _excelService;
-    private readonly MainViewModel _mainViewModel; // برای تغییر صفحه
+    private readonly MainViewModel _mainViewModel;
 
-    // وضعیت UI
-    private string _filePath;
-    private bool _isAnalyzing;
 
-    // داده‌های بایندینگ برای کامبوباکس‌ها
-    public ObservableCollection<string> DetectedHeaders { get; } = new();
+    // لیست فایل‌های انتخاب شده
+    public ObservableCollection<ExcelFileWrapper> ImportFiles { get; } = new();
 
-    private string _selectedSource;
-    private string _selectedTarget;
-    private string _selectedDuration;
+    private ExcelFileWrapper _selectedFile;
 
-    public string FilePath
+    public ExcelFileWrapper SelectedFile
     {
-        get => _filePath;
-        set => SetProperty(ref _filePath, value);
+        get => _selectedFile;
+        set
+        {
+            if (SetProperty(ref _selectedFile, value))
+            {
+                OnPropertyChanged(nameof(IsFileSelected));
+                RemoveFileCommand.RaiseCanExecuteChanged();
+            }
+        }
     }
+
+    public bool IsFileSelected => SelectedFile != null;
+
+    private bool _isAnalyzing;
 
     public bool IsAnalyzing
     {
@@ -34,11 +40,104 @@ public class ImportViewModel : ObservableObject
         set => SetProperty(ref _isAnalyzing, value);
     }
 
+    public RelayCommand AddFileCommand { get; }
+    public RelayCommand RemoveFileCommand { get; }
+    public RelayCommand AnalyzeCommand { get; }
+
+    public ImportViewModel(IExcelReaderService excelService, MainViewModel mainViewModel)
+    {
+        _excelService = excelService;
+        _mainViewModel = mainViewModel;
+
+        AddFileCommand = new RelayCommand(_ => AddFiles());
+        RemoveFileCommand = new RelayCommand(_ => RemoveFile(), _ => SelectedFile != null);
+        AnalyzeCommand = new RelayCommand(async _ => await AnalyzeAllAsync(), _ => ImportFiles.Any() && !IsAnalyzing);
+    }
+
+    private void AddFiles()
+    {
+        var dialog = new OpenFileDialog { Filter = "Excel Files|*.xlsx;*.xls", Multiselect = true };
+        if (dialog.ShowDialog() == true)
+        {
+            foreach (var file in dialog.FileNames)
+            {
+                if (!ImportFiles.Any(f => f.FilePath == file))
+                {
+                    var wrapper = new ExcelFileWrapper(file);
+                    ImportFiles.Add(wrapper);
+                    _ = LoadHeadersForFile(wrapper);
+                }
+            }
+
+            if (ImportFiles.Any()) SelectedFile = ImportFiles.Last();
+            AnalyzeCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private void RemoveFile()
+    {
+        if (SelectedFile != null)
+        {
+            ImportFiles.Remove(SelectedFile);
+            AnalyzeCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private async Task LoadHeadersForFile(ExcelFileWrapper wrapper)
+    {
+        try
+        {
+            var headers = await _excelService.GetHeadersAsync(wrapper.FilePath);
+            wrapper.DetectedHeaders.Clear();
+            foreach (var h in headers) wrapper.DetectedHeaders.Add(h);
+
+            // تشخیص خودکار ستون‌ها
+            wrapper.SelectedSource =
+                headers.FirstOrDefault(h => h.ToLower().Contains("source") || h.ToLower().Contains("from"));
+            wrapper.SelectedTarget =
+                headers.FirstOrDefault(h => h.ToLower().Contains("target") || h.ToLower().Contains("to"));
+            wrapper.SelectedDuration =
+                headers.FirstOrDefault(h => h.ToLower().Contains("duration") || h.ToLower().Contains("time"));
+
+            wrapper.SelectedDate =
+                headers.FirstOrDefault(h => h.ToLower().Contains("date") || h.ToLower().Contains("تاریخ"));
+            wrapper.SelectedTime =
+                headers.FirstOrDefault(h => h.ToLower().Contains("time") || h.ToLower().Contains("ساعت"));
+
+            wrapper.StatusText = "Ready";
+            wrapper.StatusColor = "LightGreen";
+        }
+        catch
+        {
+            wrapper.StatusText = "Error";
+            wrapper.StatusColor = "Red";
+        }
+    }
+
+    private async Task AnalyzeAllAsync()
+    {
+        IsAnalyzing = true;
+        await _mainViewModel.StartMultiFileGraphProcessingAsync(ImportFiles.ToList());
+        IsAnalyzing = false;
+    }
+}
+
+// کلاس کمکی برای هر فایل در لیست
+public class ExcelFileWrapper : ObservableObject
+{
+    public string FilePath { get; }
+    public string FileName => System.IO.Path.GetFileName(FilePath);
+    public ObservableCollection<string> DetectedHeaders { get; } = new();
+
+    private string _selectedSource;
+
     public string SelectedSource
     {
         get => _selectedSource;
         set => SetProperty(ref _selectedSource, value);
     }
+
+    private string _selectedTarget;
 
     public string SelectedTarget
     {
@@ -46,83 +145,48 @@ public class ImportViewModel : ObservableObject
         set => SetProperty(ref _selectedTarget, value);
     }
 
+    private string _selectedDuration;
+
     public string SelectedDuration
     {
         get => _selectedDuration;
         set => SetProperty(ref _selectedDuration, value);
     }
 
-    // دستورات (Commands)
-    public RelayCommand BrowseCommand { get; }
-    public RelayCommand AnalyzeCommand { get; }
+    private string _selectedDate;
 
-    // Constructor Injection
-    public ImportViewModel(IExcelReaderService excelService, MainViewModel mainViewModel)
+    public string SelectedDate
     {
-        _excelService = excelService;
-        _mainViewModel = mainViewModel;
-
-        BrowseCommand = new RelayCommand(_ => BrowseFile());
-        AnalyzeCommand = new RelayCommand(async _ => await AnalyzeAsync(), _ => CanAnalyze());
+        get => _selectedDate;
+        set => SetProperty(ref _selectedDate, value);
     }
 
-    private void BrowseFile()
+    private string _selectedTime;
+
+    public string SelectedTime
     {
-        var dialog = new OpenFileDialog { Filter = "Excel Files|*.xlsx;*.xls" };
-        if (dialog.ShowDialog() == true)
-        {
-            FilePath = dialog.FileName;
-            _ = LoadHeadersAsync(); // Fire and forget (safe in UI context)
-        }
+        get => _selectedTime;
+        set => SetProperty(ref _selectedTime, value);
     }
 
-    private async Task LoadHeadersAsync()
-    {
-        try
-        {
-            var headers = await _excelService.GetHeadersAsync(FilePath);
-            DetectedHeaders.Clear();
-            foreach (var h in headers) DetectedHeaders.Add(h);
+    private string _statusText = "Pending...";
 
-            // تلاش برای تشخیص هوشمند ستون‌ها
-            SelectedSource = headers.FirstOrDefault(h =>
-                h.ToLower().Contains("source") || h.ToLower().Contains("origin") || h.ToLower().Contains("from"));
-            SelectedTarget = headers.FirstOrDefault(h =>
-                h.ToLower().Contains("target") || h.ToLower().Contains("destination") || h.ToLower().Contains("to"));
-            SelectedDuration = headers.FirstOrDefault(h =>
-                h.ToLower().Contains("duration") || h.ToLower().Contains("sec") || h.ToLower().Contains("time"));
-        }
-        catch (System.Exception ex)
-        {
-            MessageBox.Show($"Error reading file: {ex.Message}");
-        }
+    public string StatusText
+    {
+        get => _statusText;
+        set => SetProperty(ref _statusText, value);
     }
 
-    private bool CanAnalyze()
+    private string _statusColor = "Gray";
+
+    public string StatusColor
     {
-        return !string.IsNullOrEmpty(SelectedSource) &&
-               !string.IsNullOrEmpty(SelectedTarget) &&
-               !IsAnalyzing;
+        get => _statusColor;
+        set => SetProperty(ref _statusColor, value);
     }
 
-    private async Task AnalyzeAsync()
+    public ExcelFileWrapper(string path)
     {
-        {
-            IsAnalyzing = true;
-
-            // ایجاد Mapping Profile
-            var mapping = new ColumnMapping
-            {
-                SourceColumn = SelectedSource,
-                TargetColumn = SelectedTarget,
-                DurationColumn = SelectedDuration
-            };
-
-            // ارسال اطلاعات به MainViewModel برای شروع پردازش و تغییر صفحه به گراف
-            // نکته: منطق پردازش در MainViewModel مدیریت می‌شود تا بین صفحات به اشتراک گذاشته شود
-            await _mainViewModel.StartGraphProcessingAsync(FilePath, mapping);
-
-            IsAnalyzing = false;
-        }
+        FilePath = path;
     }
 }

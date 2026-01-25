@@ -22,40 +22,54 @@ public class MainViewModel : ObservableObject
     {
         _excelService = excelService;
         _layoutService = layoutService;
-
-        // شروع برنامه با صفحه ایمپورت
-        // نکته: چون ImportViewModel نیاز به MainViewModel دارد، اینجا دستی می‌سازیم یا از Factory استفاده می‌کنیم
-        // برای سادگی اینجا دستی پاس می‌دهیم (در پروژه بزرگتر از NavigationService استفاده می‌شود)
         CurrentView = new ImportViewModel(_excelService, this);
     }
 
-    public async Task StartGraphProcessingAsync(string filePath, ColumnMapping mapping)
+    public async Task StartMultiFileGraphProcessingAsync(List<ExcelFileWrapper> files)
     {
         try
         {
-            // 1. خواندن داده‌ها
-            var records = await _excelService.ParseFileAsync(filePath, mapping);
+            var allRecords = new List<CdrRecord>();
 
-            // 2. تبدیل داده‌های خام به گراف (Aggregation Logic)
-            // این لاجیک را بعداً به یک سرویس جداگانه (GraphService) منتقل می‌کنیم
-            var (nodes, edges) = ProcessData(records);
+            // 1. خواندن تمام فایل‌ها
+            foreach (var file in files)
+            {
+                if (string.IsNullOrEmpty(file.SelectedSource) || string.IsNullOrEmpty(file.SelectedTarget)) continue;
 
-            // 3. محاسبه چیدمان (Heavy Calculation)
-            // اینجا منتظر می‌مانیم (یا لودینگ نمایش می‌دهیم)
+                var mapping = new ColumnMapping
+                {
+                    SourceColumn = file.SelectedSource,
+                    TargetColumn = file.SelectedTarget,
+                    DurationColumn = file.SelectedDuration
+                };
+
+                // فرض: متد ParseFileAsync در سرویس باید طوری باشد که نام فایل و متادیتا را هم پر کند
+                var records = await _excelService.ParseFileAsync(file.FilePath, mapping);
+                allRecords.AddRange(records);
+            }
+
+            if (!allRecords.Any())
+            {
+                MessageBox.Show("No records found.");
+                return;
+            }
+
+            // 2. تجمیع داده‌ها
+            var (nodes, edges) = ProcessDataAggregated(allRecords);
+
+            // 3. محاسبه لی‌اوت
             await _layoutService.ApplyLayoutAsync(nodes, edges);
 
-            // 4. تغییر صفحه به نمایش گراف
-            CurrentView = new GraphViewModel(nodes, edges); 
-            MessageBox.Show($"Graph Ready! Nodes: {nodes.Count}, Edges: {edges.Count}");
+            // 4. نمایش گراف
+            CurrentView = new GraphViewModel(nodes, edges);
         }
         catch (System.Exception ex)
         {
-            MessageBox.Show($"Analysis Error: {ex.Message}");
+            MessageBox.Show($"Error: {ex.Message}");
         }
     }
 
-    // منطق ساده تبدیل رکوردها به گراف (موقت در اینجا)
-    private (List<GraphNode> nodes, List<GraphEdge> edges) ProcessData(IEnumerable<CdrRecord> records)
+    private (List<GraphNode> nodes, List<GraphEdge> edges) ProcessDataAggregated(List<CdrRecord> records)
     {
         var nodeDict = new Dictionary<string, GraphNode>();
         var edgeDict = new Dictionary<string, GraphEdge>();
@@ -64,38 +78,51 @@ public class MainViewModel : ObservableObject
         {
             if (string.IsNullOrWhiteSpace(r.SourceNumber) || string.IsNullOrWhiteSpace(r.TargetNumber)) continue;
 
-            // Create/Get Nodes
+            // مدیریت نودها
             if (!nodeDict.ContainsKey(r.SourceNumber)) nodeDict[r.SourceNumber] = new GraphNode(r.SourceNumber);
             if (!nodeDict.ContainsKey(r.TargetNumber)) nodeDict[r.TargetNumber] = new GraphNode(r.TargetNumber);
 
-            // Update Node Metrics
-            nodeDict[r.SourceNumber].AddMetrics(1, r.DurationSeconds);
-            nodeDict[r.TargetNumber].AddMetrics(1, r.DurationSeconds);
+            var sNode = nodeDict[r.SourceNumber];
+            var tNode = nodeDict[r.TargetNumber];
 
-            // Create/Get Edge
-            // کلید یکتا: همیشه کوچکتر-بزرگتر (برای گراف بدون جهت) یا جهت‌دار بسته به نیاز
-            // اینجا فرض می‌کنیم جهت مهم است:
-            var edgeKey = $"{r.SourceNumber}_{r.TargetNumber}";
+            sNode.AddMetrics(1, r.DurationSeconds);
+            tNode.AddMetrics(1, r.DurationSeconds);
 
-            if (!edgeDict.ContainsKey(edgeKey))
-                edgeDict[edgeKey] = new GraphEdge(r.SourceNumber, r.TargetNumber);
+            // افزودن رکورد به لیست جزئیات نودها
+            sNode.AddRecord(r);
+            tNode.AddRecord(r);
 
+            // مدیریت یال‌ها (بدون جهت: A_B == B_A)
+            var id1 = string.Compare(r.SourceNumber, r.TargetNumber) < 0 ? r.SourceNumber : r.TargetNumber;
+            var id2 = string.Compare(r.SourceNumber, r.TargetNumber) < 0 ? r.TargetNumber : r.SourceNumber;
+            var edgeKey = $"{id1}_{id2}";
+
+            if (!edgeDict.ContainsKey(edgeKey)) edgeDict[edgeKey] = new GraphEdge(id1, id2);
             edgeDict[edgeKey].AddInteraction(r.DurationSeconds);
         }
 
-        // نرمال‌سازی وزن‌ها برای نمایش
+        // نرمال‌سازی گرافیکی
         var edges = edgeDict.Values.ToList();
         if (edges.Any())
         {
             var maxCalls = edges.Max(e => e.CallCount);
             foreach (var e in edges)
             {
-                // وزن خط: ترکیبی از تعداد تماس و مدت زمان (فعلا فقط تعداد برای سادگی)
                 e.CalculatedWeight = (double)e.CallCount / maxCalls;
-                e.Thickness = (float)(1 + (e.CalculatedWeight * 5)); // ضخامت بین 1 تا 6 پیکسل
+                e.Thickness = (float)(1 + (e.CalculatedWeight * 7));
             }
         }
 
-        return (nodeDict.Values.ToList(), edges);
+        var nodes = nodeDict.Values.ToList();
+        if (nodes.Any())
+        {
+            var maxCalls = nodes.Max(n => n.TotalCalls);
+            foreach (var n in nodes) n.Weight = (double)n.TotalCalls / maxCalls;
+        }
+
+        return (nodes, edges);
     }
+
+    // جهت سازگاری
+    public Task StartGraphProcessingAsync(string f, ColumnMapping m) => Task.CompletedTask;
 }

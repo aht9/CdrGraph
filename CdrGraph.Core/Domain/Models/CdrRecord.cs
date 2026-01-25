@@ -4,7 +4,13 @@ public class CdrRecord
 {
     public string SourceNumber { get; set; }
     public string TargetNumber { get; set; }
-    public DateTime CallDate { get; set; }
     public double DurationSeconds { get; set; }
-    public string CallType { get; set; } // Incoming, Outgoing
+    
+    // فیلدهای جدید برای تاریخ و ساعت
+    public DateTime CallDateTime { get; set; } 
+    public string DateStr { get; set; } // نگهداری مقدار خام تاریخ (اختیاری)
+    public string TimeStr { get; set; } // نگهداری مقدار خام ساعت (اختیاری)
+
+    public string OriginFileName { get; set; }
+    public Dictionary<string, object> RawMetadata { get; set; } = new Dictionary<string, object>();
 }
