@@ -15,12 +15,14 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>     <!-- Canvas -->
-            <ColumnDefinition Width="Auto"/>  <!-- Details Panel -->
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Main Graph Canvas -->
+        <!-- Main Canvas Area -->
         <Grid Grid.Column="0" Background="#1E1E1E" ClipToBounds="True">
+            
+            <!-- 1. The Graph Canvas -->
             <skia:SKElement Name="GraphCanvas" 
                             PaintSurface="OnPaintSurface"
                             MouseDown="OnMouseDown"
@@ -28,18 +30,39 @@
                             MouseUp="OnMouseUp"
                             MouseWheel="OnMouseWheel"/>
 
-            <!-- Overlay Info -->
-            <Border VerticalAlignment="Top" HorizontalAlignment="Left" Background="#AA000000" CornerRadius="5" Margin="10" Padding="10">
+            <!-- 2. Info Overlay (Top Left) -->
+            <Border VerticalAlignment="Top" HorizontalAlignment="Left" 
+                    Background="#AA000000" CornerRadius="5" Margin="10" Padding="10" IsHitTestVisible="False">
                 <TextBlock Text="{Binding StatusText}" Foreground="White" FontWeight="Bold"/>
             </Border>
             
-            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Right" Orientation="Horizontal" Margin="10">
-                 <Button Content="Export PDF" Click="ExportButton_Click" Padding="10,5" Background="#007ACC" Foreground="White" BorderThickness="0"/>
+            <!-- 3. Action Buttons (Bottom Right) -->
+            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Right" Orientation="Horizontal" Margin="20">
+                 
+                 <!-- Reset Button -->
+                 <Button Command="{Binding ResetCommand}" 
+                         Content="New Project"
+                         Padding="15,8" Margin="0,0,10,0"
+                         Background="#C42B1C" Foreground="White" FontWeight="Bold" BorderThickness="0">
+                     <Button.Resources>
+                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
+                     </Button.Resources>
+                 </Button>
+
+                 <!-- Export Button -->
+                 <Button Click="ExportButton_Click" 
+                         Content="Export PDF"
+                         Padding="15,8" 
+                         Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0">
+                     <Button.Resources>
+                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
+                     </Button.Resources>
+                 </Button>
             </StackPanel>
         </Grid>
 
-        <!-- Side Details Panel (Collapsible) -->
-        <Border Grid.Column="1" Width="300" Background="#252526" BorderBrush="#3E3E42" BorderThickness="1,0,0,0">
+        <!-- Side Details Panel -->
+        <Border Grid.Column="1" Width="350" Background="#252526" BorderBrush="#3E3E42" BorderThickness="1,0,0,0">
             <Border.Style>
                 <Style TargetType="Border">
                     <Style.Triggers>
@@ -50,38 +73,27 @@
                 </Style>
             </Border.Style>
 
+            <!-- ... (محتوای پنل جزئیات مثل قبل) ... -->
             <Grid Margin="10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-
                 <TextBlock Grid.Row="0" Text="Node Details" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
-
-                <!-- Summary Info -->
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
                     <TextBlock Text="{Binding SelectedNode.Id, StringFormat='Number: {0}'}" FontSize="14" Foreground="#007ACC" FontWeight="Bold"/>
                     <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Total Calls: {0}'}" Foreground="Gray"/>
                     <TextBlock Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Duration: {0:N2} min'}" Foreground="Gray"/>
                 </StackPanel>
-
-                <!-- Data Grid for Excel Rows -->
                 <DockPanel Grid.Row="2">
                     <TextBlock DockPanel.Dock="Top" Text="Related Records:" Foreground="White" Margin="0,0,0,5"/>
-                    <DataGrid ItemsSource="{Binding SelectedNodeRecords}" 
-                              AutoGenerateColumns="False" 
-                              Background="#1E1E1E" 
-                              RowBackground="#2D2D30"
-                              Foreground="White"
-                              HeadersVisibility="Column"
-                              BorderThickness="0"
-                              IsReadOnly="True">
+                    <DataGrid ItemsSource="{Binding SelectedNodeRecords}" AutoGenerateColumns="False" Background="#1E1E1E" RowBackground="#2D2D30" Foreground="White" HeadersVisibility="Column" BorderThickness="0" IsReadOnly="True" GridLinesVisibility="Horizontal">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="File" Binding="{Binding File}" Width="60"/>
-                            <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="80"/>
+                            <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="70"/>
                             <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="80"/>
-                            <DataGridTextColumn Header="Sec" Binding="{Binding Duration}" Width="40"/>
+                            <DataGridTextColumn Header="Dur(s)" Binding="{Binding Duration}" Width="50"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

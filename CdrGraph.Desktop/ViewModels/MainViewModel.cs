@@ -32,6 +32,7 @@ public class MainViewModel : ObservableObject
 
     public async Task StartMultiFileGraphProcessingAsync(List<ExcelFileWrapper> files, int userMaxNodes)
     {
+        var fileColorMap = files.ToDictionary(f => f.FileName, f => f.SelectedFileColor);
         await Task.Run(async () =>
         {
             try
@@ -62,7 +63,7 @@ public class MainViewModel : ObservableObject
                 }
 
                 // 3. دریافت داده‌های خام از دیتابیس
-                var nodes = await _dataService.GetAggregatedNodesAsync();
+                var nodes = await _dataService.GetAggregatedNodesAsync(fileColorMap);
                 var edges = await _dataService.GetAggregatedEdgesAsync();
 
                 if (!nodes.Any())

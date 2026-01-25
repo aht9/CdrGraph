@@ -243,9 +243,32 @@ public partial class GraphView : UserControl
             float radius = 10 + (float)(node.Weight * 2);
             SKPaint paint;
 
-            if (isDimmed) paint = _dimmedNodePaint;
-            else if (isActive || node == _hoveredNode) paint = _activeNodePaint;
-            else paint = _nodePaint;
+            if (isDimmed) 
+            {
+                // استفاده از رنگ خود نود اما با شفافیت کم برای حالت Dimmed
+                var nodeColor = SKColor.Parse(node.Color);
+                paint = new SKPaint 
+                { 
+                    Style = SKPaintStyle.Fill, 
+                    Color = nodeColor.WithAlpha(40), 
+                    IsAntialias = true 
+                };
+            }
+            else if (isActive || node == _hoveredNode) 
+            {
+                // حالت فعال (کمی روشن‌تر یا با حاشیه)
+                paint = _activeNodePaint; // یا می‌توانید رنگ خود نود را روشن‌تر کنید
+            }
+            else 
+            {
+                // *** استفاده از رنگ اختصاصی نود ***
+                paint = new SKPaint 
+                { 
+                    Style = SKPaintStyle.Fill, 
+                    Color = SKColor.Parse(node.Color), 
+                    IsAntialias = true 
+                };
+            }
             
             canvas.DrawCircle(node.X, node.Y, radius, paint);
 

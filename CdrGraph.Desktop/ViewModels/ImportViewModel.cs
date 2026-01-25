@@ -51,6 +51,21 @@ public class ImportViewModel : ObservableObject
     public RelayCommand AddFileCommand { get; }
     public RelayCommand RemoveFileCommand { get; }
     public RelayCommand AnalyzeCommand { get; }
+    
+    // لیست رنگ‌های پیشنهادی برای انتخاب کاربر
+    public List<string> AvailableColors { get; } = new List<string>
+    {
+        "#FF4500", // OrangeRed
+        "#1E90FF", // DodgerBlue
+        "#32CD32", // LimeGreen
+        "#FFD700", // Gold
+        "#9370DB", // MediumPurple
+        "#00CED1", // DarkTurquoise
+        "#DC143C", // Crimson
+        "#FF69B4", // HotPink
+        "#8A2BE2", // BlueViolet
+        "#00FA9A"  // MediumSpringGreen
+    };
 
     public ImportViewModel(IExcelReaderService excelService, MainViewModel mainViewModel)
     {
@@ -67,16 +82,21 @@ public class ImportViewModel : ObservableObject
         var dialog = new OpenFileDialog { Filter = "Excel Files|*.xlsx;*.xls", Multiselect = true };
         if (dialog.ShowDialog() == true)
         {
+            int colorIndex = 0;
             foreach (var file in dialog.FileNames)
             {
                 if (!ImportFiles.Any(f => f.FilePath == file))
                 {
                     var wrapper = new ExcelFileWrapper(file);
+                        
+                    // اختصاص رنگ پیش‌فرض چرخشی به فایل
+                    if (ImportFiles.Count < AvailableColors.Count)
+                        wrapper.SelectedFileColor = AvailableColors[ImportFiles.Count % AvailableColors.Count];
+                        
                     ImportFiles.Add(wrapper);
                     _ = LoadHeadersForFile(wrapper);
                 }
             }
-
             if (ImportFiles.Any()) SelectedFile = ImportFiles.Last();
             AnalyzeCommand.RaiseCanExecuteChanged();
         }
@@ -127,6 +147,8 @@ public class ImportViewModel : ObservableObject
         IsAnalyzing = false;
         AnalyzeCommand.RaiseCanExecuteChanged();
     }
+    
+    
 }
 
 public class ExcelFileWrapper : ObservableObject
@@ -191,9 +213,9 @@ public class ExcelFileWrapper : ObservableObject
         get => _statusColor;
         set => SetProperty(ref _statusColor, value);
     }
+    
+    private string _selectedFileColor = "#1E90FF";
+    public string SelectedFileColor { get => _selectedFileColor; set => SetProperty(ref _selectedFileColor, value); }
 
-    public ExcelFileWrapper(string path)
-    {
-        FilePath = path;
-    }
+    public ExcelFileWrapper(string path) { FilePath = path; }
 }

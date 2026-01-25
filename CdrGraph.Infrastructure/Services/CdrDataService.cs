@@ -77,39 +77,60 @@ public class CdrDataService
         }
     }
 
-    public async Task<List<GraphNode>> GetAggregatedNodesAsync()
+    public async Task<List<GraphNode>> GetAggregatedNodesAsync(Dictionary<string, string> fileColors)
     {
-        // خواندن فقط داده‌های ضروری با NoTracking
+        // 1. دریافت آمار کلی تماس‌ها (مثل قبل)
         var rawData = await _context.CdrRecords
             .AsNoTracking()
-            .Select(x => new { S = x.SourceNumber, T = x.TargetNumber, D = x.Duration })
+            .Select(x => new { S = x.SourceNumber, T = x.TargetNumber, D = x.Duration, F = x.FileName })
             .ToListAsync();
 
-        // پردازش در حافظه (Memory) بسیار سریعتر از کوئری‌های پیچیده GroupBy در EF Core روی SQLite است
         var nodeStats = new Dictionary<string, (int Calls, double Dur)>();
+        // دیکشنری برای شمارش اینکه هر نود در کدام فایل چند بار دیده شده
+        var nodeFileCounts = new Dictionary<string, Dictionary<string, int>>();
 
-        void AddStat(string num, double dur)
+        void AddStat(string num, double dur, string fileName)
         {
             if (string.IsNullOrEmpty(num)) return;
+
+            // آمار کلی
             if (!nodeStats.ContainsKey(num)) nodeStats[num] = (0, 0);
             var current = nodeStats[num];
             nodeStats[num] = (current.Calls + 1, current.Dur + dur);
+
+            // آمار فایل (برای تعیین رنگ)
+            if (!nodeFileCounts.ContainsKey(num)) nodeFileCounts[num] = new Dictionary<string, int>();
+            if (!nodeFileCounts[num].ContainsKey(fileName)) nodeFileCounts[num][fileName] = 0;
+            nodeFileCounts[num][fileName]++;
         }
 
         foreach (var item in rawData)
         {
-            AddStat(item.S, item.D);
-            AddStat(item.T, item.D);
+            AddStat(item.S, item.D, item.F);
+            AddStat(item.T, item.D, item.F);
         }
 
         var nodes = nodeStats.Select(kvp =>
         {
             var n = new GraphNode(kvp.Key);
             n.AddMetrics(kvp.Value.Calls, kvp.Value.Dur);
+
+            // تعیین رنگ: پیدا کردن فایلی که این شماره بیشترین تکرار را در آن داشته
+            if (nodeFileCounts.ContainsKey(kvp.Key))
+            {
+                var topFile = nodeFileCounts[kvp.Key]
+                    .OrderByDescending(x => x.Value)
+                    .FirstOrDefault().Key;
+
+                if (topFile != null && fileColors.ContainsKey(topFile))
+                {
+                    n.Color = fileColors[topFile];
+                }
+            }
+
             return n;
         }).ToList();
 
-        // نرمال‌سازی وزن‌ها
         if (nodes.Any())
         {
             var maxCalls = nodes.Max(n => n.TotalCalls);
