@@ -1,63 +1,92 @@
 ﻿<UserControl x:Class="CdrGraph.Desktop.Views.GraphView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF"
              xmlns:vm="clr-namespace:CdrGraph.Desktop.ViewModels"
              d:DataContext="{d:DesignInstance Type=vm:GraphViewModel}"
-             mc:Ignorable="d" 
+             mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000">
-    
+
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     </UserControl.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <!-- Main Canvas Area -->
-        <Grid Grid.Column="0" Background="#1E1E1E" ClipToBounds="True">
-            
-            <!-- 1. The Graph Canvas -->
-            <skia:SKElement Name="GraphCanvas" 
+        <Grid Grid.Column="0" ClipToBounds="True">
+
+            <!-- استفاده از استایل برای تغییر رنگ پس‌زمینه بر اساس تم -->
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Background" Value="#1E1E1E" /> <!-- رنگ پیش‌فرض (Dark) -->
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsLightTheme}" Value="True">
+                            <Setter Property="Background" Value="White" /> <!-- رنگ روشن -->
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+
+            <!-- *** Toolbar (Top) *** -->
+            <Border VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,10,0,0"
+                    Background="#AA444444" CornerRadius="5" Padding="5" Panel.ZIndex="100">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Zoom:" VerticalAlignment="Center" Foreground="White" Margin="5,0" />
+                    <ComboBox Width="70" ItemsSource="{Binding ZoomLevels}" SelectedItem="{Binding SelectedZoom}"
+                              SelectionChanged="OnZoomChanged" Margin="0,0,10,0" />
+
+                    <TextBlock Text="Theme:" VerticalAlignment="Center" Foreground="White" Margin="5,0" />
+                    <ComboBox Width="90" ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}"
+                              SelectionChanged="OnThemeChanged" />
+                </StackPanel>
+            </Border>
+
+            <!-- Skia Canvas -->
+            <skia:SKElement Name="GraphCanvas"
                             PaintSurface="OnPaintSurface"
                             MouseDown="OnMouseDown"
                             MouseMove="OnMouseMove"
                             MouseUp="OnMouseUp"
-                            MouseWheel="OnMouseWheel"/>
+                            MouseWheel="OnMouseWheel" />
 
-            <!-- 2. Info Overlay (Top Left) -->
-            <Border VerticalAlignment="Top" HorizontalAlignment="Left" 
-                    Background="#AA000000" CornerRadius="5" Margin="10" Padding="10" IsHitTestVisible="False">
-                <TextBlock Text="{Binding StatusText}" Foreground="White" FontWeight="Bold"/>
+            <!-- Info Overlay -->
+            <Border VerticalAlignment="Top" HorizontalAlignment="Left"
+                    Background="#AA000000" CornerRadius="5" Margin="10,60,0,0" Padding="10" IsHitTestVisible="False">
+                <TextBlock Text="{Binding StatusText}" Foreground="White" FontWeight="Bold" />
             </Border>
-            
-            <!-- 3. Action Buttons (Bottom Right) -->
-            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Right" Orientation="Horizontal" Margin="20">
-                 
-                 <!-- Reset Button -->
-                 <Button Command="{Binding ResetCommand}" 
-                         Content="New Project"
-                         Padding="15,8" Margin="0,0,10,0"
-                         Background="#C42B1C" Foreground="White" FontWeight="Bold" BorderThickness="0">
-                     <Button.Resources>
-                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
-                     </Button.Resources>
-                 </Button>
 
-                 <!-- Export Button -->
-                 <Button Click="ExportButton_Click" 
-                         Content="Export PDF"
-                         Padding="15,8" 
-                         Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0">
-                     <Button.Resources>
-                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
-                     </Button.Resources>
-                 </Button>
+            <!-- Buttons -->
+            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Right" Orientation="Horizontal" Margin="20">
+                <!-- Reset Button -->
+                <Button Command="{Binding ResetCommand}"
+                        Content="New Project"
+                        Padding="15,8" Margin="0,0,10,0"
+                        Background="#C42B1C" Foreground="White" FontWeight="Bold" BorderThickness="0">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="5" />
+                        </Style>
+                    </Button.Resources>
+                </Button>
+
+                <!-- Export Button -->
+                <Button Click="ExportButton_Click"
+                        Content="Export PDF"
+                        Padding="15,8"
+                        Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="5" />
+                        </Style>
+                    </Button.Resources>
+                </Button>
             </StackPanel>
         </Grid>
 
@@ -67,33 +96,48 @@
                 <Style TargetType="Border">
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding SelectedNode}" Value="{x:Null}">
-                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Setter Property="Visibility" Value="Collapsed" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
 
-            <!-- ... (محتوای پنل جزئیات مثل قبل) ... -->
             <Grid Margin="10">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="Node Details" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+
+                <TextBlock Grid.Row="0" Text="Node Details" FontSize="18" FontWeight="Bold" Foreground="White"
+                           Margin="0,0,0,10" />
+
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
-                    <TextBlock Text="{Binding SelectedNode.Id, StringFormat='Number: {0}'}" FontSize="14" Foreground="#007ACC" FontWeight="Bold"/>
-                    <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Total Calls: {0}'}" Foreground="Gray"/>
-                    <TextBlock Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Duration: {0:N2} min'}" Foreground="Gray"/>
+                    <TextBlock Text="{Binding SelectedNode.Id, StringFormat='Number: {0}'}" FontSize="14"
+                               Foreground="#007ACC" FontWeight="Bold" />
+                    <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Total Calls: {0}'}"
+                               Foreground="Gray" />
+                    <TextBlock
+                        Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Duration: {0:N2} min'}"
+                        Foreground="Gray" />
                 </StackPanel>
+
                 <DockPanel Grid.Row="2">
-                    <TextBlock DockPanel.Dock="Top" Text="Related Records:" Foreground="White" Margin="0,0,0,5"/>
-                    <DataGrid ItemsSource="{Binding SelectedNodeRecords}" AutoGenerateColumns="False" Background="#1E1E1E" RowBackground="#2D2D30" Foreground="White" HeadersVisibility="Column" BorderThickness="0" IsReadOnly="True" GridLinesVisibility="Horizontal">
+                    <TextBlock DockPanel.Dock="Top" Text="Related Records:" Foreground="White" Margin="0,0,0,5" />
+                    <DataGrid ItemsSource="{Binding SelectedNodeRecords}"
+                              AutoGenerateColumns="False"
+                              Background="#1E1E1E"
+                              RowBackground="#2D2D30"
+                              Foreground="White"
+                              HeadersVisibility="Column"
+                              BorderThickness="0"
+                              IsReadOnly="True"
+                              GridLinesVisibility="Horizontal">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="File" Binding="{Binding File}" Width="60"/>
-                            <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="70"/>
-                            <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="80"/>
-                            <DataGridTextColumn Header="Dur(s)" Binding="{Binding Duration}" Width="50"/>
+                            <DataGridTextColumn Header="File" Binding="{Binding File}" Width="60" />
+                            <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="70" />
+                            <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="80" />
+                            <DataGridTextColumn Header="Dur(s)" Binding="{Binding Duration}" Width="50" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

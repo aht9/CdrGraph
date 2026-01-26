@@ -11,103 +11,133 @@ namespace CdrGraph.Desktop.Views;
 
 public partial class GraphView : UserControl
 {
-    // وضعیت دوربین (Zoom/Pan)
+    // Camera
     private float _scale = 1.0f;
     private SKPoint _offset = new SKPoint(0, 0);
 
-    // وضعیت موس و درگ
+    // Interaction State
     private bool _isPanning;
     private GraphNode _draggedNode;
+    private GraphEdge _draggedEdge; // خطی که در حال جابجایی است
     private Point _lastMousePos;
     private SKPoint _lastMouseWorldPos;
 
-    // وضعیت انتخاب و هاور
     private GraphEdge _hoveredEdge;
     private GraphNode _hoveredNode;
 
-    // --- قلم‌ها (Paints) ---
+    // Theme Colors (Dynamic)
+    private SKColor _bgColor = SKColor.Parse("#1E1E1E");
+    private SKColor _defaultEdgeColor = SKColors.Gray.WithAlpha(100);
+    private SKColor _defaultTextColor = SKColors.White;
 
-    private readonly SKPaint _edgePaint = new SKPaint
-    {
-        Style = SKPaintStyle.Stroke,
-        Color = SKColors.Gray.WithAlpha(100),
-        IsAntialias = true,
-        StrokeCap = SKStrokeCap.Round // سر گرد برای زیبایی خطوط
-    };
-
-    private readonly SKPaint _dimmedEdgePaint = new SKPaint
-    {
-        Style = SKPaintStyle.Stroke,
-        Color = SKColors.Gray.WithAlpha(20), // بسیار کمرنگ
-        IsAntialias = true
-    };
-
-    private readonly SKPaint _activeEdgePaint = new SKPaint
-    {
-        Style = SKPaintStyle.Stroke,
-        Color = SKColors.Gold, // طلایی برای حالت انتخاب
-        IsAntialias = true,
-        StrokeCap = SKStrokeCap.Round
-    };
-
-    private readonly SKPaint _nodePaint = new SKPaint
-    {
-        Style = SKPaintStyle.Fill,
-        Color = SKColors.DodgerBlue,
-        IsAntialias = true
-    };
-
-    private readonly SKPaint _dimmedNodePaint = new SKPaint
-    {
-        Style = SKPaintStyle.Fill,
-        Color = SKColors.DodgerBlue.WithAlpha(40),
-        IsAntialias = true
-    };
-
-    private readonly SKPaint _activeNodePaint = new SKPaint
-    {
-        Style = SKPaintStyle.Fill,
-        Color = SKColors.Orange,
-        IsAntialias = true
-    };
-
-    private readonly SKPaint _textPaint = new SKPaint
-    {
-        Color = SKColors.White,
-        TextSize = 12,
-        IsAntialias = true,
-        TextAlign = SKTextAlign.Center
-    };
-
-    // تنظیمات تولتیپ (بزرگتر و خواناتر)
-    private readonly SKPaint _tooltipBgPaint = new SKPaint
-        { Color = SKColors.Black.WithAlpha(240), Style = SKPaintStyle.Fill };
-
-    private readonly SKPaint _tooltipBorderPaint = new SKPaint
-        { Color = SKColors.White.WithAlpha(150), Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
-
-    private readonly SKPaint _tooltipTextPaint = new SKPaint
-        { Color = SKColors.White, TextSize = 16, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Segoe UI") };
+    // Paints (Will be updated on theme change)
+    private SKPaint _edgePaint;
+    private SKPaint _dimmedEdgePaint;
+    private SKPaint _activeEdgePaint;
+    private SKPaint _nodePaint;
+    private SKPaint _dimmedNodePaint;
+    private SKPaint _activeNodePaint;
+    private SKPaint _textPaint;
+    private SKPaint _tooltipBgPaint;
+    private SKPaint _tooltipBorderPaint;
+    private SKPaint _tooltipTextPaint;
 
     public GraphView()
     {
         InitializeComponent();
+        InitializePaints(); // ساخت اولیه قلم‌ها
+    }
+
+    // --- مدیریت تم و رنگ ---
+    private void InitializePaints()
+    {
+        _edgePaint = new SKPaint
+        {
+            Style = SKPaintStyle.Stroke, Color = _defaultEdgeColor, IsAntialias = true, StrokeCap = SKStrokeCap.Round
+        };
+        _dimmedEdgePaint = new SKPaint
+            { Style = SKPaintStyle.Stroke, Color = _defaultEdgeColor.WithAlpha(20), IsAntialias = true };
+        _activeEdgePaint = new SKPaint
+            { Style = SKPaintStyle.Stroke, Color = SKColors.Gold, IsAntialias = true, StrokeCap = SKStrokeCap.Round };
+
+        _nodePaint = new SKPaint { Style = SKPaintStyle.Fill, Color = SKColors.DodgerBlue, IsAntialias = true };
+        _dimmedNodePaint = new SKPaint
+            { Style = SKPaintStyle.Fill, Color = SKColors.DodgerBlue.WithAlpha(40), IsAntialias = true };
+        _activeNodePaint = new SKPaint
+            { Style = SKPaintStyle.Fill, Color = SKColors.Orange, IsAntialias = true }; // Selected Node Color
+
+        _textPaint = new SKPaint
+            { Color = _defaultTextColor, TextSize = 12, IsAntialias = true, TextAlign = SKTextAlign.Center };
+
+        _tooltipBgPaint = new SKPaint { Color = SKColors.Black.WithAlpha(240), Style = SKPaintStyle.Fill };
+        _tooltipBorderPaint = new SKPaint
+            { Color = SKColors.White.WithAlpha(150), Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
+        _tooltipTextPaint = new SKPaint
+        {
+            Color = SKColors.White, TextSize = 16, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Segoe UI")
+        };
+    }
+
+    private void OnThemeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var vm = DataContext as GraphViewModel;
+        if (vm == null) return;
+
+        if (vm.SelectedTheme == "Light Mode")
+        {
+            _bgColor = SKColors.White;
+            _defaultEdgeColor = SKColors.Black.WithAlpha(150); // خطوط مشکی در تم روشن
+            _defaultTextColor = SKColors.Black;
+            _tooltipBgPaint.Color = SKColors.White.WithAlpha(240);
+            _tooltipBorderPaint.Color = SKColors.Black.WithAlpha(50);
+            _tooltipTextPaint.Color = SKColors.Black;
+        }
+        else // Dark Mode
+        {
+            _bgColor = SKColor.Parse("#1E1E1E");
+            _defaultEdgeColor = SKColors.Gray.WithAlpha(100);
+            _defaultTextColor = SKColors.White;
+            _tooltipBgPaint.Color = SKColors.Black.WithAlpha(240);
+            _tooltipBorderPaint.Color = SKColors.White.WithAlpha(150);
+            _tooltipTextPaint.Color = SKColors.White;
+        }
+
+        // بروزرسانی رنگ قلم‌ها
+        _edgePaint.Color = _defaultEdgeColor;
+        _dimmedEdgePaint.Color = _defaultEdgeColor.WithAlpha(30);
+        _textPaint.Color = _defaultTextColor;
+
+        GraphCanvas.InvalidateVisual();
+    }
+
+    private void OnZoomChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var vm = DataContext as GraphViewModel;
+        if (vm != null && vm.SelectedZoom != null)
+        {
+            // تبدیل "100%" به 1.0
+            string zoomStr = vm.SelectedZoom.Replace("%", "");
+            if (float.TryParse(zoomStr, out float zoomVal))
+            {
+                _scale = zoomVal / 100f;
+                GraphCanvas.InvalidateVisual();
+            }
+        }
     }
 
     private void ExportButton_Click(object sender, RoutedEventArgs e) => ExportGraph();
 
-    // --- حلقه اصلی ترسیم (Rendering Loop) ---
+    // --- Rendering ---
+
     private void OnPaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
         var canvas = e.Surface.Canvas;
         var vm = DataContext as GraphViewModel;
 
-        // پاک کردن صفحه
-        canvas.Clear(SKColor.Parse("#1E1E1E"));
+        canvas.Clear(_bgColor); // استفاده از رنگ پس‌زمینه پویا
 
         if (vm == null || vm.Nodes == null) return;
 
-        // اصلاح DPI برای مانیتورهای با رزولوشن بالا
         float density = 1.0f;
         if (GraphCanvas.ActualWidth > 0) density = (float)(e.Info.Width / GraphCanvas.ActualWidth);
 
@@ -116,31 +146,31 @@ public partial class GraphView : UserControl
         canvas.Translate(_offset.X, _offset.Y);
         canvas.Scale(_scale);
 
-        // تعیین نود متمرکز (یا هاور شده یا انتخاب شده)
         var focusNode = _draggedNode ?? _hoveredNode ?? vm.SelectedNode;
 
-        // رسم هوشمند گراف (Smart Draw)
         DrawGraphSmart(canvas, vm.Nodes, vm.Edges, focusNode);
 
         // رسم دایره هایلایت دور نود انتخاب شده
         if (vm.SelectedNode != null)
         {
-            float strokeWidth = 3f / _scale; // ضخامت ثابت نسبت به زوم
+            float strokeWidth = 3f / _scale;
             using (var selectionPaint = new SKPaint
                    {
                        Style = SKPaintStyle.Stroke, Color = SKColors.Yellow, StrokeWidth = strokeWidth,
                        IsAntialias = true
                    })
             {
-                float radius = 10 + (float)(vm.SelectedNode.Weight * 2);
+                // نود انتخاب شده بزرگتر رسم شده، پس هایلایت هم باید بزرگتر باشد
+                // ضریب 1.8 همان ضریبی است که در DrawSingleNode برای حالت Active استفاده کردیم
+                float radius = (10 + (float)(vm.SelectedNode.Weight * 2)) * 1.8f;
                 canvas.DrawCircle(vm.SelectedNode.X, vm.SelectedNode.Y, radius + 4, selectionPaint);
             }
         }
 
         canvas.Restore();
 
-        // رسم تولتیپ (فقط اگر در حال درگ کردن نیستیم)
-        if (_draggedNode == null)
+        // رسم تولتیپ (اگر درگ نمی‌کنیم)
+        if (_draggedNode == null && _draggedEdge == null)
         {
             if (_hoveredNode != null)
             {
@@ -155,10 +185,8 @@ public partial class GraphView : UserControl
         }
     }
 
-    // --- منطق رسم هوشمند ---
     private void DrawGraphSmart(SKCanvas canvas, List<GraphNode> nodes, List<GraphEdge> edges, GraphNode focusNode)
     {
-        // حالت ۱: هیچ نودی فوکوس نیست -> همه چیز عادی رسم شود
         if (focusNode == null)
         {
             foreach (var edge in edges)
@@ -167,35 +195,20 @@ public partial class GraphView : UserControl
                 var t = nodes.FirstOrDefault(n => n.Id == edge.TargetId);
                 if (s == null || t == null) continue;
 
-                float thickness = edge.Thickness;
-                var paint = _edgePaint;
+                var paint = (edge == _hoveredEdge) ? _activeEdgePaint : _edgePaint;
+                if (edge != _hoveredEdge) paint.StrokeWidth = edge.Thickness;
+                else paint.StrokeWidth = edge.Thickness + 2;
 
-                // اگر خط هاور شده باشد، قرمز و ضخیم‌تر شود
-                if (edge == _hoveredEdge)
-                {
-                    paint = new SKPaint
-                    {
-                        Style = SKPaintStyle.Stroke, Color = SKColors.Red, StrokeWidth = thickness + 2,
-                        IsAntialias = true, StrokeCap = SKStrokeCap.Round
-                    };
-                }
-                else
-                {
-                    _edgePaint.StrokeWidth = thickness;
-                }
-
-                DrawCurvedLine(canvas, s.X, s.Y, t.X, t.Y, paint);
+                DrawCurvedLine(canvas, s.X, s.Y, t.X, t.Y, edge, paint);
             }
 
             foreach (var node in nodes) DrawSingleNode(canvas, node, false);
         }
-        // حالت ۲: نودی فوکوس است -> فقط مرتبط‌ها روشن باشند (Focus Mode)
         else
         {
             var connectedEdges = new HashSet<GraphEdge>();
             var connectedNodeIds = new HashSet<string> { focusNode.Id };
 
-            // شناسایی همسایه‌ها
             foreach (var edge in edges)
             {
                 if (edge.SourceId == focusNode.Id || edge.TargetId == focusNode.Id)
@@ -206,7 +219,7 @@ public partial class GraphView : UserControl
                 }
             }
 
-            // لایه ۱: رسم خطوط غیرمرتبط (کمرنگ)
+            // 1. پس‌زمینه
             foreach (var edge in edges)
             {
                 if (!connectedEdges.Contains(edge))
@@ -216,18 +229,17 @@ public partial class GraphView : UserControl
                     if (s != null && t != null)
                     {
                         _dimmedEdgePaint.StrokeWidth = 1;
-                        DrawCurvedLine(canvas, s.X, s.Y, t.X, t.Y, _dimmedEdgePaint);
+                        DrawCurvedLine(canvas, s.X, s.Y, t.X, t.Y, edge, _dimmedEdgePaint);
                     }
                 }
             }
 
-            // لایه ۲: رسم نودهای غیرمرتبط (کمرنگ)
             foreach (var node in nodes)
             {
                 if (!connectedNodeIds.Contains(node.Id)) DrawSingleNode(canvas, node, true);
             }
 
-            // لایه ۳: رسم خطوط مرتبط (پررنگ/طلایی)
+            // 2. پیش‌زمینه
             foreach (var edge in connectedEdges)
             {
                 var s = nodes.FirstOrDefault(n => n.Id == edge.SourceId);
@@ -235,102 +247,83 @@ public partial class GraphView : UserControl
                 if (s != null && t != null)
                 {
                     _activeEdgePaint.StrokeWidth = edge.Thickness + 2;
-                    DrawCurvedLine(canvas, s.X, s.Y, t.X, t.Y, _activeEdgePaint);
+                    DrawCurvedLine(canvas, s.X, s.Y, t.X, t.Y, edge, _activeEdgePaint);
                 }
             }
 
-            // لایه ۴: رسم نودهای مرتبط (عادی)
             foreach (var node in nodes)
             {
                 if (connectedNodeIds.Contains(node.Id))
                 {
+                    // اگر نود فوکوس باشد، بزرگتر رسم شود (IsActive = true)
                     DrawSingleNode(canvas, node, false, node.Id == focusNode.Id);
                 }
             }
         }
     }
 
-    // *** رسم خط خمیده (Bezier Curve) ***
-    private void DrawCurvedLine(SKCanvas canvas, float x1, float y1, float x2, float y2, SKPaint paint)
+    private void DrawCurvedLine(SKCanvas canvas, float x1, float y1, float x2, float y2, GraphEdge edge, SKPaint paint)
     {
-        float distance = (float)Math.Sqrt(Math.Pow(x2 - x1, 2) + Math.Pow(y2 - y1, 2));
-
-        // اگر فاصله کم بود، خط صاف بکش (پرفورمنس)
-        if (distance < 10)
-        {
-            canvas.DrawLine(x1, y1, x2, y2, paint);
-            return;
-        }
-
-        var cp = GetControlPoint(x1, y1, x2, y2);
+        // محاسبه نقطه کنترل با در نظر گرفتن جابجایی دستی کاربر
+        var cp = GetControlPoint(x1, y1, x2, y2, edge.ControlPointOffsetX, edge.ControlPointOffsetY);
 
         using (var path = new SKPath())
         {
             path.MoveTo(x1, y1);
-            // منحنی درجه ۲ (یک نقطه کنترل)
             path.QuadTo(cp.X, cp.Y, x2, y2);
             canvas.DrawPath(path, paint);
         }
     }
 
-    // محاسبه نقطه کنترل برای انحنا
-    private SKPoint GetControlPoint(float x1, float y1, float x2, float y2)
+    private SKPoint GetControlPoint(float x1, float y1, float x2, float y2, float offsetX = 0, float offsetY = 0)
     {
         float midX = (x1 + x2) / 2;
         float midY = (y1 + y2) / 2;
-        float curveFactor = 0.15f; // میزان انحنا
+
+        // انحنای پیش‌فرض + انحنای دستی کاربر
+        float defaultCurveFactor = 0.15f;
         float deltaX = x2 - x1;
         float deltaY = y2 - y1;
 
-        // انحنا با چرخش ۹۰ درجه بردار خط
-        return new SKPoint(midX - (deltaY * curveFactor), midY + (deltaX * curveFactor));
+        float defaultCpX = midX - (deltaY * defaultCurveFactor);
+        float defaultCpY = midY + (deltaX * defaultCurveFactor);
+
+        return new SKPoint(defaultCpX + offsetX, defaultCpY + offsetY);
     }
 
     private void DrawSingleNode(SKCanvas canvas, GraphNode node, bool isDimmed, bool isActive = false)
     {
-        float radius = 10 + (float)(node.Weight * 2);
-        SKPaint paint;
+        float baseRadius = 10 + (float)(node.Weight * 2);
+        // *** بزرگنمایی نود فعال ***
+        float radius = isActive ? baseRadius * 1.8f : baseRadius;
 
+        SKPaint paint;
         if (isDimmed)
         {
-            // استفاده از رنگ نود اما شفاف
             var nodeColor = !string.IsNullOrEmpty(node.Color) ? SKColor.Parse(node.Color) : SKColors.DodgerBlue;
-            paint = new SKPaint { Style = SKPaintStyle.Fill, Color = nodeColor.WithAlpha(30), IsAntialias = true };
+            paint = new SKPaint { Style = SKPaintStyle.Fill, Color = nodeColor.WithAlpha(40), IsAntialias = true };
         }
         else if (isActive || node == _hoveredNode)
         {
-            paint = _activeNodePaint;
+            paint = _activeNodePaint; // نود نارنجی برای حالت فعال
         }
         else
         {
-            // استفاده از رنگ اختصاصی نود (اگر فایل رنگ داشته باشد)
             var nodeColor = !string.IsNullOrEmpty(node.Color) ? SKColor.Parse(node.Color) : SKColors.DodgerBlue;
             paint = new SKPaint { Style = SKPaintStyle.Fill, Color = nodeColor, IsAntialias = true };
         }
 
         canvas.DrawCircle(node.X, node.Y, radius, paint);
 
-        // رسم لیبل فقط اگر دیم نشده باشد یا زوم زیاد باشد
         if (!isDimmed && (_scale > 0.6f || isActive || node == _hoveredNode))
         {
-            canvas.DrawText(node.Id, node.X, node.Y + radius + 15, _textPaint);
+            // متن را کمی پایین‌تر می‌بریم اگر نود بزرگ شده باشد
+            float textOffset = isActive ? 25 : 15;
+            canvas.DrawText(node.Id, node.X, node.Y + radius + textOffset, _textPaint);
         }
     }
 
-    // --- متدهای کمکی دریافت اطلاعات ---
-
-    private string GetNodeInfo(GraphNode node)
-    {
-        return $"Number: {node.Id}\nTotal Calls: {node.TotalCalls}\nDuration: {node.TotalDurationMinutes:N1} min";
-    }
-
-    private string GetEdgeInfo(GraphEdge edge, GraphViewModel vm)
-    {
-        string baseInfo = $"Calls: {edge.CallCount}\nDuration: {edge.TotalDurationMinutes:N1} min";
-        return baseInfo;
-    }
-
-    // --- تعاملات ماوس (Mouse Interaction) ---
+    // --- Mouse Interaction ---
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -343,7 +336,7 @@ public partial class GraphView : UserControl
             float worldX = ((float)pos.X - _offset.X) / _scale;
             float worldY = ((float)pos.Y - _offset.Y) / _scale;
 
-            GraphNode clickedNode = FindNodeAt(vm.Nodes, worldX, worldY);
+            var clickedNode = FindNodeAt(vm.Nodes, worldX, worldY);
 
             if (clickedNode != null)
             {
@@ -355,11 +348,25 @@ public partial class GraphView : UserControl
             }
             else
             {
-                vm.SelectedNode = null;
-                _isPanning = true;
-                _lastMousePos = pos;
-                GraphCanvas.CaptureMouse();
-                Cursor = Cursors.ScrollAll;
+                // اگر روی نود نبود، چک کن روی خط هست؟
+                var clickedEdge = FindEdgeAt(vm.Nodes, vm.Edges, worldX, worldY);
+                if (clickedEdge != null)
+                {
+                    // شروع جابجایی خط
+                    _draggedEdge = clickedEdge;
+                    _lastMousePos = pos;
+                    GraphCanvas.CaptureMouse();
+                    Cursor = Cursors.Hand; // یا آیکون تغییر شکل
+                }
+                else
+                {
+                    // Pan
+                    vm.SelectedNode = null;
+                    _isPanning = true;
+                    _lastMousePos = pos;
+                    GraphCanvas.CaptureMouse();
+                    Cursor = Cursors.ScrollAll;
+                }
             }
 
             GraphCanvas.InvalidateVisual();
@@ -375,7 +382,6 @@ public partial class GraphView : UserControl
 
         if (_draggedNode != null)
         {
-            // جابجایی نود
             float deltaX = (float)(pos.X - _lastMousePos.X) / _scale;
             float deltaY = (float)(pos.Y - _lastMousePos.Y) / _scale;
             _draggedNode.X += deltaX;
@@ -383,9 +389,21 @@ public partial class GraphView : UserControl
             _lastMousePos = pos;
             GraphCanvas.InvalidateVisual();
         }
+        else if (_draggedEdge != null)
+        {
+            // *** جابجایی خط ***
+            // ما Offset کنترل پوینت را تغییر می‌دهیم
+            float deltaX = (float)(pos.X - _lastMousePos.X) / _scale;
+            float deltaY = (float)(pos.Y - _lastMousePos.Y) / _scale;
+
+            _draggedEdge.ControlPointOffsetX += deltaX;
+            _draggedEdge.ControlPointOffsetY += deltaY;
+
+            _lastMousePos = pos;
+            GraphCanvas.InvalidateVisual();
+        }
         else if (_isPanning)
         {
-            // جابجایی صفحه
             var deltaX = (float)(pos.X - _lastMousePos.X);
             var deltaY = (float)(pos.Y - _lastMousePos.Y);
             _offset.X += deltaX;
@@ -395,7 +413,7 @@ public partial class GraphView : UserControl
         }
         else
         {
-            // تشخیص هاور (Hover)
+            // Hover Logic
             var vm = DataContext as GraphViewModel;
             if (vm != null && vm.Nodes != null)
             {
@@ -418,6 +436,7 @@ public partial class GraphView : UserControl
                     {
                         _hoveredEdge = foundEdge;
                         needsRedraw = true;
+                        if (_hoveredEdge != null) Cursor = Cursors.Hand;
                     }
                 }
                 else if (_hoveredEdge != null)
@@ -435,41 +454,32 @@ public partial class GraphView : UserControl
     {
         _isPanning = false;
         _draggedNode = null;
+        _draggedEdge = null;
         GraphCanvas.ReleaseMouseCapture();
         Cursor = Cursors.Arrow;
     }
 
-    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        var pos = e.GetPosition(this);
-        var zoomFactor = 1.1f;
-        float newScale = e.Delta > 0 ? _scale * zoomFactor : _scale / zoomFactor;
-        newScale = Math.Clamp(newScale, 0.1f, 10.0f);
-        float scaleRatio = newScale / _scale;
-        _offset.X = (float)pos.X - ((float)pos.X - _offset.X) * scaleRatio;
-        _offset.Y = (float)pos.Y - ((float)pos.Y - _offset.Y) * scaleRatio;
-        _scale = newScale;
-        GraphCanvas.InvalidateVisual();
-    }
-
-    // --- متدهای کمکی محاسباتی ---
-
+    // --- Helpers ---
     private GraphNode FindNodeAt(List<GraphNode> nodes, float x, float y)
     {
         for (int i = nodes.Count - 1; i >= 0; i--)
         {
             var n = nodes[i];
+            // شعاع کلیک برای نودهای بزرگ شده باید بیشتر باشد
+            // اگر نود انتخاب شده است (Active)، شعاعش 1.8 برابر است
+            var vm = DataContext as GraphViewModel;
+            bool isActive = vm?.SelectedNode == n;
+            float radiusMultiplier = isActive ? 1.8f : 1.0f;
+
             float dist = (float)Math.Sqrt(Math.Pow(n.X - x, 2) + Math.Pow(n.Y - y, 2));
-            if (dist < (15 + n.Weight * 2)) return n;
+            if (dist < (15 + n.Weight * 2) * radiusMultiplier) return n;
         }
 
         return null;
     }
 
-    // **تشخیص دقیق برخورد با خطوط خمیده**
     private GraphEdge FindEdgeAt(List<GraphNode> nodes, List<GraphEdge> edges, float x, float y)
     {
-        // تلورانس کلیک بر اساس زوم
         float screenTolerance = 15f;
         float worldTolerance = screenTolerance / _scale;
 
@@ -479,20 +489,8 @@ public partial class GraphView : UserControl
             var t = nodes.FirstOrDefault(n => n.Id == edge.TargetId);
             if (s == null || t == null) continue;
 
-            // ابتدا فاصله خط مستقیم (برای سرعت)
-            float straightDist = (float)Math.Sqrt(Math.Pow(t.X - s.X, 2) + Math.Pow(t.Y - s.Y, 2));
-            float dist;
-
-            if (straightDist < 10)
-            {
-                dist = PointToSegmentDist(x, y, s.X, s.Y, t.X, t.Y);
-            }
-            else
-            {
-                var cp = GetControlPoint(s.X, s.Y, t.X, t.Y);
-                // محاسبه فاصله دقیق از منحنی
-                dist = GetDistanceToBezier(new SKPoint(x, y), new SKPoint(s.X, s.Y), cp, new SKPoint(t.X, t.Y));
-            }
+            var cp = GetControlPoint(s.X, s.Y, t.X, t.Y, edge.ControlPointOffsetX, edge.ControlPointOffsetY);
+            float dist = GetDistanceToBezier(new SKPoint(x, y), new SKPoint(s.X, s.Y), cp, new SKPoint(t.X, t.Y));
 
             if (dist < (edge.Thickness / 2 + worldTolerance)) return edge;
         }
@@ -500,26 +498,20 @@ public partial class GraphView : UserControl
         return null;
     }
 
-    // تخمین فاصله نقطه تا منحنی بزیر با قطعه‌بندی (Segmentation)
     private float GetDistanceToBezier(SKPoint p, SKPoint p0, SKPoint p1, SKPoint p2)
     {
         float minDistance = float.MaxValue;
         SKPoint prev = p0;
-
-        // تقسیم منحنی به ۱۵ قطعه برای دقت بالا
         int segments = 15;
         for (int i = 1; i <= segments; i++)
         {
             float t = i / (float)segments;
             float u = 1 - t;
-
             float x = u * u * p0.X + 2 * u * t * p1.X + t * t * p2.X;
             float y = u * u * p0.Y + 2 * u * t * p1.Y + t * t * p2.Y;
             SKPoint current = new SKPoint(x, y);
-
             float dist = PointToSegmentDist(p.X, p.Y, prev.X, prev.Y, current.X, current.Y);
             if (dist < minDistance) minDistance = dist;
-
             prev = current;
         }
 
@@ -547,18 +539,16 @@ public partial class GraphView : UserControl
             if (w > maxWidth) maxWidth = w;
         }
 
-        float lineHeight = 28; // فاصله خطوط زیاد
-        float width = maxWidth + 40;
-        float height = lines.Length * lineHeight + 20;
-
+        float lineHeight = 20;
+        float width = maxWidth + 30;
+        float height = lines.Length * lineHeight + 15;
         var rect = new SKRect(x + 15, y + 15, x + 15 + width, y + 15 + height);
-        canvas.DrawRoundRect(rect, 8, 8, _tooltipBgPaint);
-        canvas.DrawRoundRect(rect, 8, 8, _tooltipBorderPaint);
-
-        float textY = y + 40;
+        canvas.DrawRoundRect(rect, 5, 5, _tooltipBgPaint);
+        canvas.DrawRoundRect(rect, 5, 5, _tooltipBorderPaint);
+        float textY = y + 32;
         foreach (var line in lines)
         {
-            canvas.DrawText(line, x + 35, textY, _tooltipTextPaint);
+            canvas.DrawText(line, x + 25, textY, _tooltipTextPaint);
             textY += lineHeight;
         }
     }
@@ -566,8 +556,38 @@ public partial class GraphView : UserControl
     private SKPoint WorldToScreen(SKPoint worldPos) =>
         new SKPoint(worldPos.X * _scale + _offset.X, worldPos.Y * _scale + _offset.Y);
 
+    private string GetNodeInfo(GraphNode node) =>
+        $"Number: {node.Id}\nTotal Calls: {node.TotalCalls}\nDuration: {node.TotalDurationMinutes:N1} min";
+
+    private string GetEdgeInfo(GraphEdge edge, GraphViewModel vm) =>
+        $"Calls: {edge.CallCount}\nDuration: {edge.TotalDurationMinutes:N1} min";
+
+    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var pos = e.GetPosition(this);
+        var zoomFactor = 1.1f;
+        float newScale = e.Delta > 0 ? _scale * zoomFactor : _scale / zoomFactor;
+        newScale = Math.Clamp(newScale, 0.1f, 10.0f);
+
+        // آپدیت کردن ComboBox ویومدل
+        var vm = DataContext as GraphViewModel;
+        if (vm != null)
+        {
+            // این کار باعث می‌شود SelectedZoom تغییر کند و از طریق OnZoomChanged دوباره Scale ست شود
+            // اما برای روانی کار، Scale داخلی را هم تغییر می‌دهیم
+            vm.SelectedZoom = $"{(int)(newScale * 100)}%";
+        }
+
+        float scaleRatio = newScale / _scale;
+        _offset.X = (float)pos.X - ((float)pos.X - _offset.X) * scaleRatio;
+        _offset.Y = (float)pos.Y - ((float)pos.Y - _offset.Y) * scaleRatio;
+        _scale = newScale;
+        GraphCanvas.InvalidateVisual();
+    }
+
     public void ExportGraph()
     {
+        // (کد اکسپورت قبلی با استفاده از DrawGraphSmart)
         var vm = DataContext as GraphViewModel;
         if (vm == null || !vm.Nodes.Any()) return;
 
@@ -591,12 +611,11 @@ public partial class GraphView : UserControl
 
                 using var surface = SKSurface.Create(new SKImageInfo(imgSize, imgSize));
                 var c = surface.Canvas;
-                c.Clear(SKColors.White);
+                c.Clear(_bgColor); // پس زمینه رنگ تم فعلی (یا سفید برای پرینت)
                 c.Translate(imgSize / 2, imgSize / 2);
                 c.Scale(scale);
                 c.Translate(-centerX, -centerY);
 
-                // برای اکسپورت: حالت عادی (بدون فوکوس)
                 DrawGraphSmart(c, vm.Nodes, vm.Edges, null);
 
                 using var img = surface.Snapshot();

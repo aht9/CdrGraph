@@ -9,7 +9,7 @@ namespace CdrGraph.Desktop.ViewModels;
 public class GraphViewModel : ObservableObject
 {
     private readonly MainViewModel _mainViewModel;
-    private readonly CdrDataService _dataService; 
+    private readonly CdrDataService _dataService;
 
     public List<GraphNode> Nodes { get; }
     public List<GraphEdge> Edges { get; }
@@ -23,12 +23,13 @@ public class GraphViewModel : ObservableObject
     }
 
     private GraphNode _selectedNode;
-    public GraphNode SelectedNode 
-    { 
-        get => _selectedNode; 
-        set 
+
+    public GraphNode SelectedNode
+    {
+        get => _selectedNode;
+        set
         {
-            if(SetProperty(ref _selectedNode, value))
+            if (SetProperty(ref _selectedNode, value))
             {
                 // فراخوانی متد آسنکرون برای دریافت جزئیات
                 _ = UpdateDetailViewAsync();
@@ -43,8 +44,51 @@ public class GraphViewModel : ObservableObject
     // دستور بازگشت به صفحه اصلی (Reset)
     public RelayCommand ResetCommand { get; }
 
+
+    // --- ویژگی‌های جدید UI ---
+
+    // 1. Zoom Levels
+    public List<string> ZoomLevels { get; } = new List<string> { "50%", "75%", "100%", "125%", "150%", "200%", "300%" };
+
+    private string _selectedZoom = "100%";
+
+    public string SelectedZoom
+    {
+        get => _selectedZoom;
+        set => SetProperty(ref _selectedZoom, value); // View به این گوش می‌دهد
+    }
+
+    // 2. Themes
+    public List<string> Themes { get; } = new List<string> { "Dark Mode", "Light Mode" };
+
+    private string _selectedTheme = "Dark Mode";
+
+    public string SelectedTheme
+    {
+        get => _selectedTheme;
+        set
+        {
+            if (SetProperty(ref _selectedTheme, value))
+            {
+                // اطلاع‌رسانی وضعیت تم (View این را هندل می‌کند)
+                IsLightTheme = value == "Light Mode";
+            }
+        }
+    }
+
+    private bool _isLightTheme;
+
+    public bool IsLightTheme
+    {
+        get => _isLightTheme;
+        set => SetProperty(ref _isLightTheme, value);
+    }
+
+    // -------------------------
+
     // سازنده: دریافت MainViewModel برای قابلیت ریست
-    public GraphViewModel(List<GraphNode> nodes, List<GraphEdge> edges, MainViewModel mainViewModel, CdrDataService dataService)
+    public GraphViewModel(List<GraphNode> nodes, List<GraphEdge> edges, MainViewModel mainViewModel,
+        CdrDataService dataService)
     {
         Nodes = nodes;
         Edges = edges;

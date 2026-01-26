@@ -5,20 +5,23 @@ public class GraphEdge
     public string Id { get; }
     public string SourceId { get; }
     public string TargetId { get; }
-        
-    // Metrics
+
     public int CallCount { get; set; }
     public double TotalDurationMinutes { get; set; }
-        
-    // Visual Properties
-    public double CalculatedWeight { get; set; } // 0.0 to 1.0 (Normalised)
-    public float Thickness { get; set; }        // Pixel width
+
+    public double CalculatedWeight { get; set; }
+    public float Thickness { get; set; }
+
+    // --- ویژگی‌های جدید برای جابجایی خط ---
+    // فاصله نقطه کنترل منحنی از حالت پیش‌فرض
+    public float ControlPointOffsetX { get; set; } = 0;
+    public float ControlPointOffsetY { get; set; } = 0;
 
     public GraphEdge(string sourceId, string targetId)
     {
         SourceId = sourceId;
         TargetId = targetId;
-        Id = $"{sourceId}_{targetId}"; // Composite Key
+        Id = $"{sourceId}_{targetId}";
     }
 
     public void AddInteraction(double duration)
