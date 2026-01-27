@@ -1,5 +1,5 @@
 ﻿using System.Collections.ObjectModel;
-using System.Windows; // برای MessageBox
+using System.Windows;
 using Microsoft.Win32;
 using CdrGraph.Core.Common;
 using CdrGraph.Core.Domain.Models;
@@ -17,7 +17,7 @@ public class GraphViewModel : ObservableObject
     public List<GraphNode> Nodes { get; }
     public List<GraphEdge> Edges { get; }
 
-    // لیست انتخاب چندگانه
+    // لیست انتخاب چندگانه (Multi-Selection)
     public ObservableCollection<GraphNode> SelectedNodes { get; } = new ObservableCollection<GraphNode>();
 
     private string _statusText;
@@ -45,9 +45,7 @@ public class GraphViewModel : ObservableObject
     public ObservableCollection<RecordDisplayModel> SelectedNodeRecords { get; } =
         new ObservableCollection<RecordDisplayModel>();
 
-    // --- پراپرتی‌های مورد نیاز برای رفع خطا ---
-
-    // 1. Zoom Properties
+    // --- پراپرتی‌های رابط کاربری (UI) ---
     public List<string> ZoomLevels { get; } = new List<string> { "50%", "75%", "100%", "125%", "150%", "200%", "300%" };
 
     private string _selectedZoom = "100%";
@@ -58,7 +56,6 @@ public class GraphViewModel : ObservableObject
         set => SetProperty(ref _selectedZoom, value);
     }
 
-    // 2. Theme Properties
     public List<string> Themes { get; } = new List<string> { "Dark Mode", "Light Mode" };
 
     private string _selectedTheme = "Dark Mode";
@@ -83,7 +80,6 @@ public class GraphViewModel : ObservableObject
         set => SetProperty(ref _isLightTheme, value);
     }
 
-    // 3. Report Properties
     private bool _reportByDuration;
 
     public bool ReportByDuration
@@ -92,7 +88,10 @@ public class GraphViewModel : ObservableObject
         set => SetProperty(ref _reportByDuration, value);
     }
 
-    // --- Commands ---
+    // Delegate برای درخواست تولید تصویر از View (بدون وابستگی مستقیم به UI)
+    public Func<List<GraphNode>, List<GraphEdge>, bool, byte[]> SubGraphImageGenerator { get; set; }
+
+    // --- دستورات (Commands) ---
     public RelayCommand ResetCommand { get; }
     public RelayCommand GenerateCommonReportCommand { get; }
 
@@ -108,6 +107,8 @@ public class GraphViewModel : ObservableObject
         StatusText = $"{nodes.Count} Nodes, {edges.Count} Edges";
 
         ResetCommand = new RelayCommand(_ => _mainViewModel.ResetApplication());
+
+        // گزارش مشترکات فقط وقتی فعال است که حداقل ۲ نود انتخاب شده باشد
         GenerateCommonReportCommand = new RelayCommand(GenerateCommonReport, _ => SelectedNodes.Count > 1);
     }
 
@@ -129,15 +130,12 @@ public class GraphViewModel : ObservableObject
         GenerateCommonReportCommand.RaiseCanExecuteChanged();
     }
 
-    // *** ویژگی جدید: اینDelegate توسط View مقداردهی می‌شود ***
-    // ورودی‌ها: نودها، یال‌ها، آیا مدت زمان نمایش داده شود؟ -> خروجی: آرایه بایت تصویر
-    public Func<List<GraphNode>, List<GraphEdge>, bool, byte[]> SubGraphImageGenerator { get; set; }
-
+    // گزارش مشترکات (Sub-Graph Report)
     private void GenerateCommonReport(object param)
     {
         if (SelectedNodes.Count < 2) return;
 
-        // 1. منطق پیدا کردن مشترکات
+        // 1. منطق پیدا کردن نودهای مشترک بین انتخاب‌شده‌ها
         var firstNodeNeighbors = GetNeighbors(SelectedNodes[0].Id);
         var intersection = new HashSet<string>(firstNodeNeighbors);
 
@@ -153,12 +151,13 @@ public class GraphViewModel : ObservableObject
             return;
         }
 
-        // 2. آماده‌سازی داده‌ها
+        // 2. آماده‌سازی داده‌ها برای گزارش
         var reportNodes = new List<GraphNode>();
-        reportNodes.AddRange(SelectedNodes);
-        reportNodes.AddRange(Nodes.Where(n => intersection.Contains(n.Id)));
+        reportNodes.AddRange(SelectedNodes); // نودهای اصلی
+        reportNodes.AddRange(Nodes.Where(n => intersection.Contains(n.Id))); // نودهای مشترک
 
         var reportNodeIds = new HashSet<string>(reportNodes.Select(n => n.Id));
+        // فقط خطوطی که بین این نودها هستند
         var reportEdges = Edges.Where(e => reportNodeIds.Contains(e.SourceId) && reportNodeIds.Contains(e.TargetId))
             .ToList();
 
@@ -169,7 +168,7 @@ public class GraphViewModel : ObservableObject
             graphImage = SubGraphImageGenerator(reportNodes, reportEdges, ReportByDuration);
         }
 
-        // *** 4. باز کردن دیالوگ ذخیره فایل (تغییر جدید) ***
+        // 4. ذخیره و تولید PDF
         var saveDialog = new SaveFileDialog
         {
             Filter = "PDF Report|*.pdf",
@@ -181,10 +180,8 @@ public class GraphViewModel : ObservableObject
         {
             try
             {
-                string path = saveDialog.FileName;
-
                 _reportService.GenerateCommonConnectionReport(
-                    path,
+                    saveDialog.FileName,
                     reportNodes,
                     reportEdges,
                     SelectedNodes.ToList(),
@@ -193,21 +190,55 @@ public class GraphViewModel : ObservableObject
                 );
 
                 MessageBox.Show("Report generated successfully!", "Success");
-
-                // تلاش برای باز کردن فایل پس از ذخیره
                 try
                 {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(saveDialog.FileName)
                         { UseShellExecute = true });
                 }
                 catch
                 {
-                    /* نادیده گرفتن خطا اگر فایل باز نشد */
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 MessageBox.Show($"Error saving report: {ex.Message}", "Error");
+            }
+        }
+    }
+
+    // *** متد جدید: اکسپورت گزارش جامع (Full Report) ***
+    public async Task ExportComprehensiveReportAsync(byte[] graphImage)
+    {
+        var saveDialog = new SaveFileDialog
+        {
+            Filter = "PDF Report|*.pdf",
+            FileName = $"FullReport_{System.DateTime.Now:yyyyMMdd_HHmm}",
+            Title = "Save Comprehensive Analysis Report"
+        };
+
+        if (saveDialog.ShowDialog() == true)
+        {
+            try
+            {
+                // 1. دریافت داده‌های تحلیلی از دیتابیس
+                var reportData = await _dataService.GetComprehensiveReportDataAsync();
+
+                // 2. تولید گزارش
+                _reportService.GenerateComprehensiveReport(saveDialog.FileName, graphImage, reportData);
+
+                MessageBox.Show("Comprehensive Report Generated Successfully!", "Success");
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(saveDialog.FileName)
+                        { UseShellExecute = true });
+                }
+                catch
+                {
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Export Error: {ex.Message}");
             }
         }
     }

@@ -63,39 +63,19 @@
                                                Foreground="{Binding StatusColor}" />
                                 </StackPanel>
                                  <!-- Color Picker -->
-                                <ComboBox Grid.Column="1"
-                                          ItemsSource="{Binding DataContext.AvailableColors, ElementName=RootView}"
+                                <ComboBox Grid.Column="1" 
+                                          ItemsSource="{Binding DataContext.AvailableColors, RelativeSource={RelativeSource AncestorType=UserControl}}" 
                                           SelectedItem="{Binding SelectedFileColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                          Width="140" Height="30"
-                                          VerticalAlignment="Center"
-                                          Margin="10,0,0,0"
-                                          VerticalContentAlignment="Center"
-                                          Padding="5,0"
-                                          ToolTip="Select a color for this file">
-
+                                          Width="80" Height="25" VerticalAlignment="Center" Margin="10,0,0,0"
+                                          Foreground="Black"
+                                          ToolTip="Select Color for this file's nodes">
                                     <ComboBox.ItemTemplate>
                                         <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-
-                                                <Border Width="16" Height="16"
-                                                        CornerRadius="8"
-                                                        BorderBrush="#888"
-                                                        BorderThickness="1"
-                                                        Margin="0,0,8,0">
-                                                    <Border.Background>
-                                                        <SolidColorBrush Color="{Binding}" />
-                                                    </Border.Background>
-                                                    <Border.Effect>
-                                                        <DropShadowEffect Color="Black" BlurRadius="2" ShadowDepth="1"
-                                                                          Opacity="0.3" />
-                                                    </Border.Effect>
-                                                </Border>
-
-                                                <TextBlock Text="{Binding}"
-                                                           FontSize="11"
-                                                           FontFamily="Consolas, Segoe UI"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="#333" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <!-- نمایش رنگ با Border (بدون استفاده از SolidColorBrush صریح که باعث خطا شود) -->
+                                                <Border Background="{Binding}" Width="15" Height="15" CornerRadius="2" BorderBrush="#888" BorderThickness="1" Margin="0,0,5,0"/>
+                                                <!-- نمایش کد رنگ -->
+                                                <TextBlock Text="{Binding}" FontSize="10" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>

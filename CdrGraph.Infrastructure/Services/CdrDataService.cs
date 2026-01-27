@@ -207,4 +207,83 @@ public class CdrDataService
         public Dictionary<string, int> FileCounts { get; set; } = new Dictionary<string, int>();
         public HashSet<string> UniqueNeighbors { get; set; } = new HashSet<string>();
     }
+
+    // DTO برای انتقال داده‌های گزارش
+    public class FileReportData
+    {
+        public string FileName { get; set; }
+        public string MainNodeId { get; set; }
+        public List<CallStatDto> TopByCalls { get; set; }
+        public List<CallStatDto> TopByDuration { get; set; }
+    }
+
+    public class CallStatDto
+    {
+        public string Number { get; set; }
+        public int CallCount { get; set; }
+        public double TotalDuration { get; set; }
+    }
+
+    // متد جدید: استخراج داده‌های کامل برای گزارش نهایی
+    public async Task<List<FileReportData>> GetComprehensiveReportDataAsync()
+    {
+        var result = new List<FileReportData>();
+
+        // 1. پیدا کردن لیست فایل‌ها
+        var fileNames = await _context.CdrRecords
+            .Select(x => x.FileName)
+            .Distinct()
+            .ToListAsync();
+
+        foreach (var file in fileNames)
+        {
+            if (string.IsNullOrEmpty(file)) continue;
+
+            // 2. پیدا کردن "نود اصلی" واقعی (براساس مجموع تکرار در مبدا و مقصد)
+            // از آنجا که GroupBy روی Union در EF Core برای SQLite محدودیت دارد،
+            // لیست شماره‌های درگیر در این فایل را می‌گیریم و در حافظه محاسبه می‌کنیم.
+
+            var numbersInFile = await _context.CdrRecords
+                .Where(x => x.FileName == file)
+                .Select(x => new { S = x.SourceNumber, T = x.TargetNumber })
+                .ToListAsync();
+
+            // تجمیع تمام شماره‌ها (چه مبدا چه مقصد)
+            var allNumbers = numbersInFile.Select(x => x.S).Concat(numbersInFile.Select(x => x.T));
+
+            // پیدا کردن پرتکرارترین شماره
+            var mainNode = allNumbers
+                .GroupBy(n => n)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+
+            if (mainNode == null) continue;
+
+            // 3. محاسبه آمار تماس‌ها برای نود اصلی پیدا شده
+            var interactions = await _context.CdrRecords
+                .Where(x => x.FileName == file && (x.SourceNumber == mainNode || x.TargetNumber == mainNode))
+                .GroupBy(x => x.SourceNumber == mainNode ? x.TargetNumber : x.SourceNumber)
+                .Select(g => new CallStatDto
+                {
+                    Number = g.Key,
+                    CallCount = g.Count(),
+                    TotalDuration = g.Sum(x => x.Duration)
+                })
+                .ToListAsync();
+
+            var topCalls = interactions.OrderByDescending(x => x.CallCount).Take(10).ToList();
+            var topDuration = interactions.OrderByDescending(x => x.TotalDuration).Take(10).ToList();
+
+            result.Add(new FileReportData
+            {
+                FileName = file,
+                MainNodeId = mainNode,
+                TopByCalls = topCalls,
+                TopByDuration = topDuration
+            });
+        }
+
+        return result;
+    }
 }

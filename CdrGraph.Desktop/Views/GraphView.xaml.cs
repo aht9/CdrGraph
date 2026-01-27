@@ -547,7 +547,6 @@ public partial class GraphView : UserControl
             float wx = ((float)pos.X - _offset.X) / _scale;
             float wy = ((float)pos.Y - _offset.Y) / _scale;
 
-            // استفاده از مختصات انیمیشنی برای هیت تست
             GraphNode clickedNode = null;
             for (int i = vm.Nodes.Count - 1; i >= 0; i--)
             {
@@ -572,13 +571,22 @@ public partial class GraphView : UserControl
             }
             else
             {
-                // Edge drag or Pan logic...
-                // (ساده‌سازی شده: اگر روی نود نبود پن کن)
-                vm.SelectedNode = null;
-                _isPanning = true;
-                _lastMousePos = pos;
-                GraphCanvas.CaptureMouse();
-                Cursor = Cursors.ScrollAll;
+                var clickedEdge = FindEdgeAt(vm.Nodes, vm.Edges, wx, wy);
+                if (clickedEdge != null)
+                {
+                    _draggedEdge = clickedEdge;
+                    _lastMousePos = pos;
+                    GraphCanvas.CaptureMouse();
+                    Cursor = Cursors.Hand;
+                }
+                else
+                {
+                    vm.SelectedNode = null;
+                    _isPanning = true;
+                    _lastMousePos = pos;
+                    GraphCanvas.CaptureMouse();
+                    Cursor = Cursors.ScrollAll;
+                }
             }
 
             GraphCanvas.InvalidateVisual();
@@ -604,6 +612,15 @@ public partial class GraphView : UserControl
             _lastMousePos = pos;
             GraphCanvas.InvalidateVisual();
         }
+        else if (_draggedEdge != null)
+        {
+            float dx = (float)(pos.X - _lastMousePos.X) / _scale;
+            float dy = (float)(pos.Y - _lastMousePos.Y) / _scale;
+            _draggedEdge.ControlPointOffsetX += dx;
+            _draggedEdge.ControlPointOffsetY += dy;
+            _lastMousePos = pos;
+            GraphCanvas.InvalidateVisual();
+        }
         else if (_isPanning)
         {
             _offset.X += (float)(pos.X - _lastMousePos.X);
@@ -613,7 +630,6 @@ public partial class GraphView : UserControl
         }
         else
         {
-            // Hover logic with animated positions
             var vm = DataContext as GraphViewModel;
             if (vm != null && vm.Nodes != null)
             {
@@ -621,9 +637,8 @@ public partial class GraphView : UserControl
                 for (int i = vm.Nodes.Count - 1; i >= 0; i--)
                 {
                     var n = vm.Nodes[i];
-                    SKPoint anim = GetNodeAnimOffset(n.Id);
-                    float dist = (float)Math.Sqrt(Math.Pow((n.X + anim.X) - wx, 2) + Math.Pow((n.Y + anim.Y) - wy, 2));
-                    if (dist < (15 + n.Weight * 2))
+                    SKPoint a = GetNodeAnimOffset(n.Id);
+                    if (Math.Sqrt(Math.Pow((n.X + a.X) - wx, 2) + Math.Pow((n.Y + a.Y) - wy, 2)) < (15 + n.Weight * 2))
                     {
                         found = n;
                         break;
@@ -636,8 +651,22 @@ public partial class GraphView : UserControl
                     GraphCanvas.InvalidateVisual();
                 }
 
-                if (_hoveredNode != null) Cursor = Cursors.Hand;
-                else Cursor = Cursors.Arrow;
+                if (_hoveredNode == null)
+                {
+                    var foundEdge = FindEdgeAt(vm.Nodes, vm.Edges, wx, wy);
+                    if (foundEdge != _hoveredEdge)
+                    {
+                        _hoveredEdge = foundEdge;
+                        GraphCanvas.InvalidateVisual();
+                    }
+                }
+                else if (_hoveredEdge != null)
+                {
+                    _hoveredEdge = null;
+                    GraphCanvas.InvalidateVisual();
+                }
+
+                Cursor = (_hoveredNode != null || _hoveredEdge != null) ? Cursors.Hand : Cursors.Arrow;
             }
         }
     }
@@ -693,16 +722,13 @@ public partial class GraphView : UserControl
 
     private GraphEdge FindEdgeAt(List<GraphNode> nodes, List<GraphEdge> edges, float x, float y)
     {
-        float screenTolerance = 15f;
-        float worldTolerance = screenTolerance / _scale;
-
+        float tolerance = 15f / _scale;
         foreach (var edge in edges)
         {
             var s = nodes.FirstOrDefault(n => n.Id == edge.SourceId);
             var t = nodes.FirstOrDefault(n => n.Id == edge.TargetId);
             if (s == null || t == null) continue;
 
-            // استفاده از مختصات انیمیشنی نودها
             SKPoint animS = GetNodeAnimOffset(s.Id);
             SKPoint animT = GetNodeAnimOffset(t.Id);
 
@@ -711,13 +737,13 @@ public partial class GraphView : UserControl
             float tx = t.X + animT.X;
             float ty = t.Y + animT.Y;
 
-            float totalOffsetX = edge.ControlPointOffsetX + edge.AnimatedOffsetX;
-            float totalOffsetY = edge.ControlPointOffsetY + edge.AnimatedOffsetY;
+            float ox = edge.ControlPointOffsetX + edge.AnimatedOffsetX;
+            float oy = edge.ControlPointOffsetY + edge.AnimatedOffsetY;
 
-            var cp = GetControlPoint(sx, sy, tx, ty, totalOffsetX, totalOffsetY);
+            var cp = GetControlPoint(sx, sy, tx, ty, ox, oy);
             float dist = GetDistanceToBezier(new SKPoint(x, y), new SKPoint(sx, sy), cp, new SKPoint(tx, ty));
 
-            if (dist < (edge.Thickness / 2 + worldTolerance)) return edge;
+            if (dist < (edge.Thickness / 2 + tolerance)) return edge;
         }
 
         return null;
@@ -864,48 +890,47 @@ public partial class GraphView : UserControl
         };
     }
 
-    public void ExportGraph()
+    public async void ExportGraph()
     {
         var vm = DataContext as GraphViewModel;
         if (vm == null || !vm.Nodes.Any()) return;
 
-        var saveDialog = new SaveFileDialog
-            { Filter = "PDF Report|*.pdf", FileName = $"Graph_{DateTime.Now:yyyyMMdd}" };
-        if (saveDialog.ShowDialog() == true)
+        // 1. تولید تصویر گراف
+        byte[] imageBytes = null;
+        try
         {
-            try
-            {
-                float minX = vm.Nodes.Min(n => n.X);
-                float minY = vm.Nodes.Min(n => n.Y);
-                float maxX = vm.Nodes.Max(n => n.X);
-                float maxY = vm.Nodes.Max(n => n.Y);
-                float graphW = maxX - minX + 100;
-                float graphH = maxY - minY + 100;
-                float centerX = (minX + maxX) / 2;
-                float centerY = (minY + maxY) / 2;
+            float minX = vm.Nodes.Min(n => n.X);
+            float minY = vm.Nodes.Min(n => n.Y);
+            float maxX = vm.Nodes.Max(n => n.X);
+            float maxY = vm.Nodes.Max(n => n.Y);
+            float graphW = maxX - minX + 100;
+            float graphH = maxY - minY + 100;
+            float centerX = (minX + maxX) / 2;
+            float centerY = (minY + maxY) / 2;
 
-                int imgSize = 2000;
-                float scale = Math.Min(imgSize / graphW, imgSize / graphH);
+            int imgSize = 2000;
+            float scale = Math.Min(imgSize / graphW, imgSize / graphH);
 
-                using var surface = SKSurface.Create(new SKImageInfo(imgSize, imgSize));
-                var c = surface.Canvas;
-                c.Clear(_bgColor);
-                c.Translate(imgSize / 2, imgSize / 2);
-                c.Scale(scale);
-                c.Translate(-centerX, -centerY);
+            using var surface = SKSurface.Create(new SKImageInfo(imgSize, imgSize));
+            var c = surface.Canvas;
+            c.Clear(_bgColor);
+            c.Translate(imgSize / 2, imgSize / 2);
+            c.Scale(scale);
+            c.Translate(-centerX, -centerY);
 
-                DrawGraphSmart(c, vm.Nodes, vm.Edges, null);
+            DrawGraphSmart(c, vm.Nodes, vm.Edges, null);
 
-                using var img = surface.Snapshot();
-                using var data = img.Encode(SKEncodedImageFormat.Png, 100);
-                var pdf = new CdrGraph.Infrastructure.Services.PdfReportService();
-                pdf.GenerateReport(saveDialog.FileName, vm.Nodes, vm.Edges, data.ToArray());
-                MessageBox.Show("Export Successful!");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error: " + ex.Message);
-            }
+            using var img = surface.Snapshot();
+            using var data = img.Encode(SKEncodedImageFormat.Png, 100);
+            imageBytes = data.ToArray();
         }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Image Generation Error: " + ex.Message);
+            return;
+        }
+
+        // 2. درخواست گزارش کامل
+        await vm.ExportComprehensiveReportAsync(imageBytes);
     }
 }
