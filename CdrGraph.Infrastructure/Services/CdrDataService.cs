@@ -79,35 +79,20 @@ public class CdrDataService
 
     public async Task<List<GraphNode>> GetAggregatedNodesAsync(Dictionary<string, string> fileColors)
     {
-        // 1. دریافت آمار کلی تماس‌ها (مثل قبل)
+        // دریافت آمار تماس‌ها + فایل‌ها
         var rawData = await _context.CdrRecords
             .AsNoTracking()
             .Select(x => new { S = x.SourceNumber, T = x.TargetNumber, D = x.Duration, F = x.FileName })
             .ToListAsync();
 
-        var nodeStats = new Dictionary<string, (int Calls, double Dur)>();
-        // دیکشنری برای شمارش اینکه هر نود در کدام فایل چند بار دیده شده
-        var nodeFileCounts = new Dictionary<string, Dictionary<string, int>>();
+        var nodeStats = new Dictionary<string, NodeStatDto>();
 
-        void AddStat(string num, double dur, string fileName)
-        {
-            if (string.IsNullOrEmpty(num)) return;
-
-            // آمار کلی
-            if (!nodeStats.ContainsKey(num)) nodeStats[num] = (0, 0);
-            var current = nodeStats[num];
-            nodeStats[num] = (current.Calls + 1, current.Dur + dur);
-
-            // آمار فایل (برای تعیین رنگ)
-            if (!nodeFileCounts.ContainsKey(num)) nodeFileCounts[num] = new Dictionary<string, int>();
-            if (!nodeFileCounts[num].ContainsKey(fileName)) nodeFileCounts[num][fileName] = 0;
-            nodeFileCounts[num][fileName]++;
-        }
-
+        // کلاس کمکی داخلی برای نگهداری آمار
+        // HashSet برای Neighbors استفاده می‌شود تا همسایگان تکراری شمرده نشوند
         foreach (var item in rawData)
         {
-            AddStat(item.S, item.D, item.F);
-            AddStat(item.T, item.D, item.F);
+            AddStat(nodeStats, item.S, item.D, item.F, item.T);
+            AddStat(nodeStats, item.T, item.D, item.F, item.S);
         }
 
         var nodes = nodeStats.Select(kvp =>
@@ -115,13 +100,16 @@ public class CdrDataService
             var n = new GraphNode(kvp.Key);
             n.AddMetrics(kvp.Value.Calls, kvp.Value.Dur);
 
-            // تعیین رنگ: پیدا کردن فایلی که این شماره بیشترین تکرار را در آن داشته
-            if (nodeFileCounts.ContainsKey(kvp.Key))
+            // *** منطق جدید: تشخیص نودهای Hub (پل ارتباطی) ***
+            // اگر نود با بیش از 2 شماره منحصر به فرد ارتباط دارد
+            if (kvp.Value.UniqueNeighbors.Count > 2)
             {
-                var topFile = nodeFileCounts[kvp.Key]
-                    .OrderByDescending(x => x.Value)
-                    .FirstOrDefault().Key;
-
+                n.Color = "#8A2BE2"; // رنگ بنفش (BlueViolet) برای نودهای مشترک/مهم
+            }
+            else
+            {
+                // اگر Hub نبود، رنگ فایل اصلی را بگیرد
+                var topFile = kvp.Value.FileCounts.OrderByDescending(x => x.Value).FirstOrDefault().Key;
                 if (topFile != null && fileColors.ContainsKey(topFile))
                 {
                     n.Color = fileColors[topFile];
@@ -131,6 +119,7 @@ public class CdrDataService
             return n;
         }).ToList();
 
+        // نرمال‌سازی وزن‌ها
         if (nodes.Any())
         {
             var maxCalls = nodes.Max(n => n.TotalCalls);
@@ -138,6 +127,22 @@ public class CdrDataService
         }
 
         return nodes;
+    }
+
+    // متد کمکی برای افزودن آمار
+    private void AddStat(Dictionary<string, NodeStatDto> dict, string id, double dur, string file, string neighborId)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        if (!dict.ContainsKey(id)) dict[id] = new NodeStatDto();
+
+        var stat = dict[id];
+        stat.Calls++;
+        stat.Dur += dur;
+
+        if (!stat.FileCounts.ContainsKey(file)) stat.FileCounts[file] = 0;
+        stat.FileCounts[file]++;
+
+        if (!string.IsNullOrEmpty(neighborId)) stat.UniqueNeighbors.Add(neighborId);
     }
 
     public async Task<List<GraphEdge>> GetAggregatedEdgesAsync()
@@ -192,5 +197,14 @@ public class CdrDataService
                 TimeStr = e.TimeStr
             })
             .ToListAsync();
+    }
+
+    // DTO داخلی
+    private class NodeStatDto
+    {
+        public int Calls { get; set; }
+        public double Dur { get; set; }
+        public Dictionary<string, int> FileCounts { get; set; } = new Dictionary<string, int>();
+        public HashSet<string> UniqueNeighbors { get; set; } = new HashSet<string>();
     }
 }

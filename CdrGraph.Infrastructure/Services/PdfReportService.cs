@@ -105,8 +105,83 @@ public class PdfReportService
             .GeneratePdf(filePath);
     }
 
+    // متد جدید برای گزارش مشترکات
+    public void GenerateCommonConnectionReport(string filePath, List<GraphNode> allNodes, List<GraphEdge> edges, List<GraphNode> targetNodes, bool showDuration, byte[] graphImage)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+        var commonNodes = allNodes.Except(targetNodes).ToList();
+
+        Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(2, Unit.Centimetre);
+                page.PageColor(Colors.White);
+                page.DefaultTextStyle(x => x.FontSize(11));
+
+                page.Header().Column(col => 
+                {
+                    col.Item().Text("Common Connections Analysis").SemiBold().FontSize(20).FontColor(Colors.Blue.Darken2);
+                    col.Item().Text($"Target Nodes: {string.Join(", ", targetNodes.Select(n => n.Id))}").FontSize(12).FontColor(Colors.Grey.Darken2);
+                });
+
+                page.Content().PaddingVertical(1, Unit.Centimetre).Column(col =>
+                {
+                    // *** اضافه کردن تصویر گراف ***
+                    if (graphImage != null)
+                    {
+                        col.Item().Text("Visual Graph (Sub-Graph)").Bold().FontSize(14);
+                        // نمایش تصویر با ارتفاع محدود (مثلا 10 سانتیمتر)
+                        col.Item().Height(10, Unit.Centimetre).Image(graphImage).FitArea();
+                        col.Item().PaddingBottom(1, Unit.Centimetre);
+                    }
+
+                    col.Item().Text($"{commonNodes.Count} common entities found.").Bold().FontSize(14);
+                    
+                    // ... (جدول داده‌ها مثل قبل) ...
+                    col.Item().PaddingTop(10).Table(table =>
+                    {
+                        // (تعریف ستون‌ها و هدر جدول - کد قبلی را حفظ کنید)
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn(2);
+                            foreach(var t in targetNodes) columns.RelativeColumn();
+                        });
+                        
+                        table.Header(header =>
+                        {
+                            header.Cell().Element(CellStyle).Text("Common Number").Bold();
+                            foreach (var t in targetNodes) header.Cell().Element(CellStyle).Text($"Link to {t.Id}").Bold();
+                        });
+
+                        foreach (var common in commonNodes)
+                        {
+                            table.Cell().Element(CellStyle).Text(common.Id);
+                            foreach (var target in targetNodes)
+                            {
+                                var edge = edges.FirstOrDefault(e => 
+                                    (e.SourceId == common.Id && e.TargetId == target.Id) || 
+                                    (e.TargetId == common.Id && e.SourceId == target.Id));
+
+                                string val = "-";
+                                if (edge != null)
+                                    val = showDuration ? $"{edge.TotalDurationMinutes:N1} min" : $"{edge.CallCount} calls";
+                                
+                                table.Cell().Element(CellStyle).Text(val);
+                            }
+                        }
+                    });
+                });
+
+                page.Footer().AlignCenter().Text(x => { x.Span("Page "); x.CurrentPageNumber(); });
+            });
+        })
+        .GeneratePdf(filePath);
+    }
+
     private static IContainer CellStyle(IContainer container)
     {
-        return container.BorderBottom(1).BorderColor(Colors.Grey.Lighten2).PaddingVertical(5);
+        return container.BorderBottom(1).BorderColor(Colors.Grey.Lighten2).PaddingVertical(5).PaddingHorizontal(2);
     }
 }
