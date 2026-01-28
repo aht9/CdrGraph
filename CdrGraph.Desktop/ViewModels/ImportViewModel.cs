@@ -48,10 +48,28 @@ public class ImportViewModel : ObservableObject
     }
     // ---------------------------------------
 
+    //Common Targets
+    // --- حالت جدید تحلیل ---
+    private bool _isCommonAnalysisMode;
+
+    public bool IsCommonAnalysisMode
+    {
+        get => _isCommonAnalysisMode;
+        set
+        {
+            if (SetProperty(ref _isCommonAnalysisMode, value))
+            {
+                // وقتی حالت عوض می‌شود، باید دکمه آنالیز دوباره بررسی شود
+                AnalyzeCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+    // -----------------------
+
     public RelayCommand AddFileCommand { get; }
     public RelayCommand RemoveFileCommand { get; }
     public RelayCommand AnalyzeCommand { get; }
-    
+
     // لیست رنگ‌های پیشنهادی برای انتخاب کاربر
     public List<string> AvailableColors { get; } = new List<string>
     {
@@ -64,7 +82,7 @@ public class ImportViewModel : ObservableObject
         "#DC143C", // Crimson
         "#FF69B4", // HotPink
         "#8A2BE2", // BlueViolet
-        "#00FA9A"  // MediumSpringGreen
+        "#00FA9A" // MediumSpringGreen
     };
 
     public ImportViewModel(IExcelReaderService excelService, MainViewModel mainViewModel)
@@ -74,7 +92,20 @@ public class ImportViewModel : ObservableObject
 
         AddFileCommand = new RelayCommand(_ => AddFiles());
         RemoveFileCommand = new RelayCommand(_ => RemoveFile(), _ => SelectedFile != null);
-        AnalyzeCommand = new RelayCommand(async _ => await AnalyzeAllAsync(), _ => ImportFiles.Any() && !IsAnalyzing);
+        
+        
+        // اصلاح شرط اجرا:
+        // 1. لیست خالی نباشد.
+        // 2. در حال آنالیز نباشد.
+        // 3. اگر حالت "مشترکات" انتخاب شده، حتماً باید بیش از 1 فایل باشد.
+        AnalyzeCommand = new RelayCommand(async _ => await AnalyzeAllAsync(), _ =>
+        {
+            if (!ImportFiles.Any() || IsAnalyzing) return false;
+
+            if (IsCommonAnalysisMode && ImportFiles.Count < 2) return false;
+
+            return true;
+        });
     }
 
     private void AddFiles()
@@ -88,15 +119,16 @@ public class ImportViewModel : ObservableObject
                 if (!ImportFiles.Any(f => f.FilePath == file))
                 {
                     var wrapper = new ExcelFileWrapper(file);
-                        
+
                     // اختصاص رنگ پیش‌فرض چرخشی به فایل
                     if (ImportFiles.Count < AvailableColors.Count)
                         wrapper.SelectedFileColor = AvailableColors[ImportFiles.Count % AvailableColors.Count];
-                        
+
                     ImportFiles.Add(wrapper);
                     _ = LoadHeadersForFile(wrapper);
                 }
             }
+
             if (ImportFiles.Any()) SelectedFile = ImportFiles.Last();
             AnalyzeCommand.RaiseCanExecuteChanged();
         }
@@ -140,15 +172,13 @@ public class ImportViewModel : ObservableObject
     {
         IsAnalyzing = true;
         AnalyzeCommand.RaiseCanExecuteChanged();
-
+        
         // ارسال MaxNodeLimit به متد پردازش در MainViewModel
-        await _mainViewModel.StartMultiFileGraphProcessingAsync(ImportFiles.ToList(), MaxNodeLimit);
-
+        await _mainViewModel.StartMultiFileGraphProcessingAsync(ImportFiles.ToList(), MaxNodeLimit, IsCommonAnalysisMode);
+        
         IsAnalyzing = false;
         AnalyzeCommand.RaiseCanExecuteChanged();
     }
-    
-    
 }
 
 public class ExcelFileWrapper : ObservableObject
@@ -213,9 +243,17 @@ public class ExcelFileWrapper : ObservableObject
         get => _statusColor;
         set => SetProperty(ref _statusColor, value);
     }
-    
-    private string _selectedFileColor = "#1E90FF";
-    public string SelectedFileColor { get => _selectedFileColor; set => SetProperty(ref _selectedFileColor, value); }
 
-    public ExcelFileWrapper(string path) { FilePath = path; }
+    private string _selectedFileColor = "#1E90FF";
+
+    public string SelectedFileColor
+    {
+        get => _selectedFileColor;
+        set => SetProperty(ref _selectedFileColor, value);
+    }
+
+    public ExcelFileWrapper(string path)
+    {
+        FilePath = path;
+    }
 }

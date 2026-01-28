@@ -76,9 +76,10 @@ public partial class GraphView : UserControl
         if (vm == null || vm.Nodes == null) return;
 
         bool needsRedraw = false;
-        float repulsionRadius = 250f;
-        float repulsionStrength = 100f;
-        float smoothing = 0.15f;
+        // کاهش شعاع دافعه نودها (فقط نودها کمی فاصله بگیرند، نه خطوط)
+        float repulsionRadius = 150f;  
+        float repulsionStrength = 50f; 
+        float smoothing = 0.2f;
 
         object repellerGeometry = null;
         var exemptNodes = new HashSet<string>();
@@ -93,12 +94,14 @@ public partial class GraphView : UserControl
                 if (edge.TargetId == _hoveredNode.Id) exemptNodes.Add(edge.SourceId);
             }
         }
+        /*
         else if (_hoveredEdge != null)
         {
             repellerGeometry = _hoveredEdge;
             exemptNodes.Add(_hoveredEdge.SourceId);
             exemptNodes.Add(_hoveredEdge.TargetId);
         }
+        */
         else if (vm.SelectedNode != null)
         {
             repellerGeometry = vm.SelectedNode;
@@ -165,6 +168,7 @@ public partial class GraphView : UserControl
         }
 
         // 2. محاسبه نیروی یال‌ها
+        /*
         foreach (var edge in vm.Edges)
         {
             float targetX = 0;
@@ -216,7 +220,25 @@ public partial class GraphView : UserControl
                 needsRedraw = true;
             }
         }
-
+*/
+        // جایگزین ساده: فقط ریست کردن انیمیشن خطوط (اگر قبلاً تکان خورده‌اند)
+        foreach (var edge in vm.Edges)
+        {
+            // اگر قبلاً جابجا شده‌اند، به نرمی به صفر برگردند
+            if (edge.AnimatedOffsetX != 0 || edge.AnimatedOffsetY != 0)
+            {
+                edge.AnimatedOffsetX += (0 - edge.AnimatedOffsetX) * smoothing;
+                edge.AnimatedOffsetY += (0 - edge.AnimatedOffsetY) * smoothing;
+                    
+                // اسنپ به صفر برای جلوگیری از محاسبات بی‌پایان
+                if (Math.Abs(edge.AnimatedOffsetX) < 0.1f) edge.AnimatedOffsetX = 0;
+                if (Math.Abs(edge.AnimatedOffsetY) < 0.1f) edge.AnimatedOffsetY = 0;
+                    
+                needsRedraw = true;
+            }
+        }
+        
+        
         if (needsRedraw)
         {
             GraphCanvas.InvalidateVisual();

@@ -30,17 +30,18 @@ public class MainViewModel : ObservableObject
         CurrentView = new ImportViewModel(_excelService, this);
     }
 
-    public async Task StartMultiFileGraphProcessingAsync(List<ExcelFileWrapper> files, int userMaxNodes)
+    public async Task StartMultiFileGraphProcessingAsync(List<ExcelFileWrapper> files, int userMaxNodes,
+        bool isCommonMode)
     {
         var fileColorMap = files.ToDictionary(f => f.FileName, f => f.SelectedFileColor);
+
         await Task.Run(async () =>
         {
             try
             {
-                // 1. پاکسازی دیتابیس
                 await _dataService.ClearAllDataAsync();
 
-                // 2. پردازش و درج فایل‌ها
+                // 1. درج داده‌ها (Load) - مشترک برای هر دو حالت
                 foreach (var file in files)
                 {
                     if (string.IsNullOrEmpty(file.SelectedSource) || string.IsNullOrEmpty(file.SelectedTarget))
@@ -57,52 +58,78 @@ public class MainViewModel : ObservableObject
 
                     var records = await _excelService.ParseFileAsync(file.FilePath, mapping);
                     await _dataService.BulkInsertFastAsync(records);
-
                     records = null;
                     GC.Collect();
                 }
 
-                // 3. دریافت داده‌های خام از دیتابیس
-                var nodes = await _dataService.GetAggregatedNodesAsync(fileColorMap);
-                var edges = await _dataService.GetAggregatedEdgesAsync();
+                List<GraphNode> nodes;
+                List<GraphEdge> edges;
 
-                if (!nodes.Any())
-                {
-                    Application.Current.Dispatcher.Invoke(() => MessageBox.Show("No data found."));
-                    return;
-                }
+                // *** گام جدید: شناسایی نودهای اصلی فایل‌ها ***
+                var mainNodesMap = await _dataService.GetMainNodesPerFileAsync();
+                var mainNodeIds = mainNodesMap.Values.ToHashSet();
 
-                // *** منطق فیلترینگ بر اساس انتخاب کاربر ***
-                // اگر تعداد نودها بیشتر از حد انتخابی کاربر بود، فیلتر کن
-                if (nodes.Count > userMaxNodes)
+                // 2. انشعاب منطق (Branching Logic)
+                if (isCommonMode)
                 {
+                    // الف) حالت مشترکات: فقط نودهایی که در >1 فایل بوده‌اند
+                    var result = await _dataService.GetCommonNodesAndEdgesAsync(fileColorMap);
+                    nodes = result.nodes;
+                    edges = result.edges;
+
+                    if (!nodes.Any())
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                            MessageBox.Show("No common connections found between these files.", "Result"));
+                        return;
+                    }
+
                     Application.Current.Dispatcher.Invoke(() =>
-                        MessageBox.Show(
-                            $"Found {nodes.Count} nodes. Filtering to top {userMaxNodes} active numbers based on your setting.",
-                            "Performance Optimization"));
+                        MessageBox.Show($"Found {nodes.Count} common entities crossing between files.",
+                            "Intersection Analysis"));
+                }
+                else
+                {
+                    nodes = await _dataService.GetAggregatedNodesAsync(fileColorMap);
+                    edges = await _dataService.GetAggregatedEdgesAsync();
 
-                    // الف) انتخاب نودهای مهم (پرتماس‌ترین‌ها)
-                    var topNodes = nodes.OrderByDescending(n => n.TotalCalls)
-                        .Take(userMaxNodes)
-                        .ToList();
+                    // *** فیلترینگ هوشمند با حفظ نودهای اصلی ***
+                    if (nodes.Count > userMaxNodes)
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                            MessageBox.Show($"Filtering to top {userMaxNodes} nodes (keeping Main File Hubs)."));
 
-                    // ب) ساخت HashSet برای جستجوی سریع IDها
-                    var topNodeIds = new HashSet<string>(topNodes.Select(n => n.Id));
+                        // همیشه نودهای اصلی فایل‌ها را نگه دار، حتی اگر تماس کمتری داشته باشند
+                        var mustKeepNodes = nodes.Where(n => mainNodeIds.Contains(n.Id)).ToList();
 
-                    // ج) فیلتر کردن یال‌ها (فقط خطوطی که هر دو سرشان جزو تاپ‌ها هستند)
-                    var filteredEdges = edges
-                        .Where(e => topNodeIds.Contains(e.SourceId) && topNodeIds.Contains(e.TargetId))
-                        .ToList();
+                        // بقیه ظرفیت را با پرتماس‌ترین‌ها پر کن
+                        var otherNodes = nodes
+                            .Where(n => !mainNodeIds.Contains(n.Id))
+                            .OrderByDescending(n => n.TotalCalls)
+                            .Take(userMaxNodes - mustKeepNodes.Count)
+                            .ToList();
 
-                    // جایگزینی لیست اصلی با لیست فیلتر شده
-                    nodes = topNodes;
-                    edges = filteredEdges;
+                        nodes = mustKeepNodes.Concat(otherNodes).ToList();
+
+                        var allowedIds = new HashSet<string>(nodes.Select(n => n.Id));
+                        edges = edges.Where(e => allowedIds.Contains(e.SourceId) && allowedIds.Contains(e.TargetId))
+                            .ToList();
+                    }
                 }
 
-                // 4. محاسبه لی‌اوت
+                // رنگ‌دهی ویژه به نودهای اصلی (مثلاً بزرگتر یا با حاشیه طلایی - اینجا با تگ خاص مشخص می‌کنیم)
+                foreach (var n in nodes)
+                {
+                    if (mainNodeIds.Contains(n.Id))
+                    {
+                        n.Weight += 0.5; // کمی بزرگتر کردن نودهای اصلی
+                        n.Label = $"★ {n.Label}"; // ستاره دار کردن (اختیاری)
+                    }
+                }
+
+                // 3. محاسبه لی‌اوت و نمایش
                 await _layoutService.ApplyLayoutAsync(nodes, edges);
 
-                // 5. نمایش گراف
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     CurrentView = new GraphViewModel(nodes, edges, this, _dataService);

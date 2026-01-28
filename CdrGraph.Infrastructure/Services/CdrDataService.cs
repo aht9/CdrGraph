@@ -224,45 +224,23 @@ public class CdrDataService
         public double TotalDuration { get; set; }
     }
 
-    // متد جدید: استخراج داده‌های کامل برای گزارش نهایی
+    // متد گزارش جامع (به روز شده با لاجیک جدید نود اصلی)
     public async Task<List<FileReportData>> GetComprehensiveReportDataAsync()
     {
         var result = new List<FileReportData>();
+        var mainNodesMap = await GetMainNodesPerFileAsync();
 
-        // 1. پیدا کردن لیست فایل‌ها
-        var fileNames = await _context.CdrRecords
-            .Select(x => x.FileName)
-            .Distinct()
-            .ToListAsync();
-
-        foreach (var file in fileNames)
+        foreach (var kvp in mainNodesMap)
         {
-            if (string.IsNullOrEmpty(file)) continue;
+            string file = kvp.Key;
+            string mainNode = kvp.Value;
 
-            // 2. پیدا کردن "نود اصلی" واقعی (براساس مجموع تکرار در مبدا و مقصد)
-            // از آنجا که GroupBy روی Union در EF Core برای SQLite محدودیت دارد،
-            // لیست شماره‌های درگیر در این فایل را می‌گیریم و در حافظه محاسبه می‌کنیم.
-
-            var numbersInFile = await _context.CdrRecords
-                .Where(x => x.FileName == file)
-                .Select(x => new { S = x.SourceNumber, T = x.TargetNumber })
+            var interactions = await _context.CdrRecords
+                .AsNoTracking()
+                .Where(x => x.FileName == file && (x.SourceNumber == mainNode || x.TargetNumber == mainNode))
                 .ToListAsync();
 
-            // تجمیع تمام شماره‌ها (چه مبدا چه مقصد)
-            var allNumbers = numbersInFile.Select(x => x.S).Concat(numbersInFile.Select(x => x.T));
-
-            // پیدا کردن پرتکرارترین شماره
-            var mainNode = allNumbers
-                .GroupBy(n => n)
-                .OrderByDescending(g => g.Count())
-                .Select(g => g.Key)
-                .FirstOrDefault();
-
-            if (mainNode == null) continue;
-
-            // 3. محاسبه آمار تماس‌ها برای نود اصلی پیدا شده
-            var interactions = await _context.CdrRecords
-                .Where(x => x.FileName == file && (x.SourceNumber == mainNode || x.TargetNumber == mainNode))
+            var stats = interactions
                 .GroupBy(x => x.SourceNumber == mainNode ? x.TargetNumber : x.SourceNumber)
                 .Select(g => new CallStatDto
                 {
@@ -270,20 +248,198 @@ public class CdrDataService
                     CallCount = g.Count(),
                     TotalDuration = g.Sum(x => x.Duration)
                 })
-                .ToListAsync();
-
-            var topCalls = interactions.OrderByDescending(x => x.CallCount).Take(10).ToList();
-            var topDuration = interactions.OrderByDescending(x => x.TotalDuration).Take(10).ToList();
+                .ToList();
 
             result.Add(new FileReportData
             {
                 FileName = file,
                 MainNodeId = mainNode,
-                TopByCalls = topCalls,
-                TopByDuration = topDuration
+                TopByCalls = stats.OrderByDescending(x => x.CallCount).Take(10).ToList(),
+                TopByDuration = stats.OrderByDescending(x => x.TotalDuration).Take(10).ToList()
             });
         }
+        return result;
+    }
 
+    //Common Targets
+    // --- متد اصلاح شده و هوشمند برای پیدا کردن مشترکات ---
+    public async Task<(List<GraphNode> nodes, List<GraphEdge> edges)> GetCommonNodesAndEdgesAsync(
+        Dictionary<string, string> fileColors)
+    {
+        // 1. ابتدا نودهای اصلی (Main Nodes) هر فایل را دقیق شناسایی می‌کنیم
+        var mainNodesMap = await GetMainNodesPerFileAsync();
+        var mainNodeIds = mainNodesMap.Values.ToHashSet();
+
+        if (!mainNodeIds.Any()) return (new List<GraphNode>(), new List<GraphEdge>());
+
+        // 2. واکشی تمام تماس‌هایی که حداقل یک طرفش "نود اصلی" باشد
+        var interactions = await _context.CdrRecords
+            .AsNoTracking()
+            .Where(x => mainNodeIds.Contains(x.SourceNumber) || mainNodeIds.Contains(x.TargetNumber))
+            .Select(x => new { S = x.SourceNumber, T = x.TargetNumber, D = x.Duration, F = x.FileName })
+            .ToListAsync();
+
+        // 3. پیدا کردن "نودهای واسط" (Bridges)
+        // نودی واسط است که با بیش از یک "نود اصلی" متفاوت در ارتباط باشد
+        // یا خود نود اصلی باشد که با نود اصلی دیگری در تماس است
+
+        // Map: ContactNumber -> Set of MainNodes it talked to
+        var contactConnectivity = new Dictionary<string, HashSet<string>>();
+
+        foreach (var record in interactions)
+        {
+            // تشخیص اینکه کدام طرف نود اصلی است (ممکن است هر دو باشند)
+            string mainSide = null;
+            string otherSide = null;
+
+            if (mainNodeIds.Contains(record.S))
+            {
+                mainSide = record.S;
+                otherSide = record.T;
+            }
+            else if (mainNodeIds.Contains(record.T))
+            {
+                mainSide = record.T;
+                otherSide = record.S;
+            }
+
+            if (mainSide != null && !string.IsNullOrEmpty(otherSide))
+            {
+                if (!contactConnectivity.ContainsKey(otherSide))
+                    contactConnectivity[otherSide] = new HashSet<string>();
+
+                contactConnectivity[otherSide].Add(mainSide);
+            }
+
+            // حالت خاص: تماس مستقیم بین دو نود اصلی
+            if (mainNodeIds.Contains(record.S) && mainNodeIds.Contains(record.T))
+            {
+                if (!contactConnectivity.ContainsKey(record.S)) contactConnectivity[record.S] = new HashSet<string>();
+                contactConnectivity[record.S].Add(record.T);
+
+                if (!contactConnectivity.ContainsKey(record.T)) contactConnectivity[record.T] = new HashSet<string>();
+                contactConnectivity[record.T].Add(record.S);
+            }
+        }
+
+        // فیلتر کردن: فقط نودهایی را نگه دار که به حداقل 2 نود اصلی وصل هستند
+        // یا خودشان نود اصلی هستند
+        var validNodeIds = new HashSet<string>();
+
+        // الف) نودهای اصلی همیشه باشند
+        foreach (var mn in mainNodeIds) validNodeIds.Add(mn);
+
+        // ب) نودهای مشترک (که با بیش از 1 نود اصلی حرف زده‌اند)
+        foreach (var kvp in contactConnectivity)
+        {
+            if (kvp.Value.Count >= 2)
+            {
+                validNodeIds.Add(kvp.Key);
+            }
+        }
+
+        // 4. ساخت گراف نهایی فقط با نودهای معتبر
+        var nodeStats = new Dictionary<string, (int Calls, double Dur)>();
+        var edgeDict = new Dictionary<string, GraphEdge>();
+
+        foreach (var r in interactions)
+        {
+            // فقط تماس‌هایی که دو طرفش جزو نودهای معتبر هستند
+            if (validNodeIds.Contains(r.S) && validNodeIds.Contains(r.T))
+            {
+                // ساخت آمار نود
+                if (!nodeStats.ContainsKey(r.S)) nodeStats[r.S] = (0, 0);
+                nodeStats[r.S] = (nodeStats[r.S].Calls + 1, nodeStats[r.S].Dur + r.D);
+
+                if (!nodeStats.ContainsKey(r.T)) nodeStats[r.T] = (0, 0);
+                nodeStats[r.T] = (nodeStats[r.T].Calls + 1, nodeStats[r.T].Dur + r.D);
+
+                // ساخت یال
+                var id1 = string.Compare(r.S, r.T) < 0 ? r.S : r.T;
+                var id2 = string.Compare(r.S, r.T) < 0 ? r.T : r.S;
+                var key = $"{id1}_{id2}";
+
+                if (!edgeDict.ContainsKey(key)) edgeDict[key] = new GraphEdge(id1, id2);
+                edgeDict[key].AddInteraction(r.D);
+            }
+        }
+
+        // تبدیل به آبجکت‌های گراف
+        var nodes = nodeStats.Select(kvp =>
+        {
+            var n = new GraphNode(kvp.Key);
+            n.AddMetrics(kvp.Value.Calls, kvp.Value.Dur);
+
+            // رنگ‌بندی
+            if (mainNodeIds.Contains(kvp.Key))
+            {
+                // پیدا کردن فایل مربوط به این نود اصلی برای رنگ‌دهی
+                var ownerFile = mainNodesMap.FirstOrDefault(x => x.Value == kvp.Key).Key;
+                if (ownerFile != null && fileColors.ContainsKey(ownerFile))
+                    n.Color = fileColors[ownerFile];
+
+                // نودهای اصلی کمی بزرگتر دیده شوند
+                n.Weight += 0.2;
+            }
+            else
+            {
+                // نودهای مشترک (Bridge) بنفش شوند
+                n.Color = "#8A2BE2";
+            }
+
+            return n;
+        }).ToList();
+
+        var edges = edgeDict.Values.ToList();
+        if (edges.Any())
+        {
+            var maxCalls = edges.Max(e => e.CallCount);
+            foreach (var e in edges)
+            {
+                e.CalculatedWeight = (double)e.CallCount / maxCalls;
+                e.Thickness = (float)(1 + e.CalculatedWeight * 7);
+            }
+        }
+
+        // نرمال‌سازی وزن نودها برای نمایش
+        if (nodes.Any())
+        {
+            var maxCalls = nodes.Max(n => n.TotalCalls);
+            foreach (var n in nodes) n.Weight = (double)n.TotalCalls / maxCalls;
+        }
+
+        return (nodes, edges);
+    }
+
+    // متد دقیق تشخیص نود اصلی (مجموع ورودی و خروجی)
+    public async Task<Dictionary<string, string>> GetMainNodesPerFileAsync()
+    {
+        var result = new Dictionary<string, string>();
+        var fileNames = await _context.CdrRecords.Select(x => x.FileName).Distinct().ToListAsync();
+
+        foreach (var file in fileNames)
+        {
+            // خواندن تمام شماره‌های درگیر در فایل
+            var records = await _context.CdrRecords
+                .AsNoTracking()
+                .Where(x => x.FileName == file)
+                .Select(x => new { S = x.SourceNumber, T = x.TargetNumber })
+                .ToListAsync();
+
+            if (!records.Any()) continue;
+
+            // شمارش فرکانس هر شماره (هم در S و هم در T)
+            var frequency = new Dictionary<string, int>();
+            foreach (var r in records)
+            {
+                if (!string.IsNullOrEmpty(r.S)) { if (!frequency.ContainsKey(r.S)) frequency[r.S] = 0; frequency[r.S]++; }
+                if (!string.IsNullOrEmpty(r.T)) { if (!frequency.ContainsKey(r.T)) frequency[r.T] = 0; frequency[r.T]++; }
+            }
+
+            // انتخاب پرتکرارترین شماره به عنوان صاحب فایل
+            var mainNode = frequency.OrderByDescending(x => x.Value).FirstOrDefault().Key;
+            if (!string.IsNullOrEmpty(mainNode)) result[file] = mainNode;
+        }
         return result;
     }
 }
