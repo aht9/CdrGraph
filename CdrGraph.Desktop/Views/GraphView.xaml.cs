@@ -64,7 +64,45 @@ public partial class GraphView : UserControl
         if (DataContext is GraphViewModel vm)
         {
             vm.SubGraphImageGenerator = GenerateSubGraphImage;
+            // *** اتصال متد فوکوس برای جستجو ***
+            vm.RequestFocusOnNode = FocusOnNode;
         }
+    }
+
+    // *** متد جدید: زوم و تمرکز روی نود خاص ***
+    private void FocusOnNode(GraphNode node)
+    {
+        if (node == null) return;
+
+        // دریافت مختصات نهایی نود (شامل انیمیشن)
+        SKPoint anim = GetNodeAnimOffset(node.Id);
+        float nodeX = node.X + anim.X;
+        float nodeY = node.Y + anim.Y;
+
+        float viewWidth = (float)GraphCanvas.ActualWidth;
+        float viewHeight = (float)GraphCanvas.ActualHeight;
+
+        if (viewWidth <= 0 || viewHeight <= 0) return;
+
+        // زوم هدف (اگر زوم فعلی کم است، زیادش کن. اگر زیاد است، حفظ کن)
+        float targetScale = Math.Max(_scale, 1.5f);
+
+        // فرمول محاسبه آفست برای مرکز قرار دادن نود:
+        // CenterX = NodeX * Scale + OffsetX
+        // OffsetX = CenterX - NodeX * Scale
+        float newOffsetX = (viewWidth / 2) - (nodeX * targetScale);
+        float newOffsetY = (viewHeight / 2) - (nodeY * targetScale);
+
+        _scale = targetScale;
+        _offset = new SKPoint(newOffsetX, newOffsetY);
+
+        // بروزرسانی کمبوباکس زوم در ViewModel
+        if (DataContext is GraphViewModel vm)
+        {
+            vm.SelectedZoom = $"{(int)(_scale * 100)}%";
+        }
+
+        GraphCanvas.InvalidateVisual();
     }
 
     // =========================================================
@@ -76,38 +114,32 @@ public partial class GraphView : UserControl
         if (vm == null || vm.Nodes == null) return;
 
         bool needsRedraw = false;
-        // کاهش شعاع دافعه نودها (فقط نودها کمی فاصله بگیرند، نه خطوط)
-        float repulsionRadius = 150f;  
-        float repulsionStrength = 50f; 
+        float repulsionRadius = 150f;
+        float repulsionStrength = 80f;
         float smoothing = 0.2f;
 
         object repellerGeometry = null;
         var exemptNodes = new HashSet<string>();
 
+        // تعیین منبع دافعه (فقط نودها)
         if (_hoveredNode != null)
         {
             repellerGeometry = _hoveredNode;
             exemptNodes.Add(_hoveredNode.Id);
+            // همسایگان نود هاور شده ثابت بمانند
             foreach (var edge in vm.Edges)
             {
                 if (edge.SourceId == _hoveredNode.Id) exemptNodes.Add(edge.TargetId);
                 if (edge.TargetId == _hoveredNode.Id) exemptNodes.Add(edge.SourceId);
             }
         }
-        /*
-        else if (_hoveredEdge != null)
-        {
-            repellerGeometry = _hoveredEdge;
-            exemptNodes.Add(_hoveredEdge.SourceId);
-            exemptNodes.Add(_hoveredEdge.TargetId);
-        }
-        */
         else if (vm.SelectedNode != null)
         {
             repellerGeometry = vm.SelectedNode;
             exemptNodes.Add(vm.SelectedNode.Id);
         }
 
+        // 1. فیزیک نودها (برای جلوگیری از تراکم)
         foreach (var node in vm.Nodes)
         {
             float targetX = 0;
@@ -128,30 +160,6 @@ public partial class GraphView : UserControl
                         targetY = (dy / dist) * force;
                     }
                 }
-                else if (repellerGeometry is GraphEdge rEdge)
-                {
-                    var s = vm.Nodes.FirstOrDefault(n => n.Id == rEdge.SourceId);
-                    var t = vm.Nodes.FirstOrDefault(n => n.Id == rEdge.TargetId);
-
-                    if (s != null && t != null)
-                    {
-                        float dist = PointToSegmentDist(node.X, node.Y, s.X, s.Y, t.X, t.Y);
-                        if (dist < repulsionRadius && dist > 1)
-                        {
-                            float midX = (s.X + t.X) / 2;
-                            float midY = (s.Y + t.Y) / 2;
-                            float dx = node.X - midX;
-                            float dy = node.Y - midY;
-                            float len = (float)Math.Sqrt(dx * dx + dy * dy);
-                            if (len > 0)
-                            {
-                                float force = (1 - (dist / repulsionRadius)) * repulsionStrength;
-                                targetX = (dx / len) * force;
-                                targetY = (dy / len) * force;
-                            }
-                        }
-                    }
-                }
             }
 
             if (!_nodeAnimatedOffsets.ContainsKey(node.Id)) _nodeAnimatedOffsets[node.Id] = new SKPoint(0, 0);
@@ -167,82 +175,21 @@ public partial class GraphView : UserControl
             }
         }
 
-        // 2. محاسبه نیروی یال‌ها
-        /*
+        // *** حذف فیزیک دافعه خطوط برای ثبات ***
+        // فقط ریست کردن مقادیر قبلی
         foreach (var edge in vm.Edges)
         {
-            float targetX = 0;
-            float targetY = 0;
-
-            if (repellerGeometry != null && edge != repellerGeometry)
-            {
-                var s = vm.Nodes.FirstOrDefault(n => n.Id == edge.SourceId);
-                var t = vm.Nodes.FirstOrDefault(n => n.Id == edge.TargetId);
-                if (s != null && t != null)
-                {
-                    float midX = (s.X + t.X) / 2;
-                    float midY = (s.Y + t.Y) / 2;
-
-                    if (repellerGeometry is GraphEdge rEdge)
-                    {
-                        var rs = vm.Nodes.FirstOrDefault(n => n.Id == rEdge.SourceId);
-                        var rt = vm.Nodes.FirstOrDefault(n => n.Id == rEdge.TargetId);
-                        if (rs != null && rt != null)
-                        {
-                            float dist = PointToSegmentDist(midX, midY, rs.X, rs.Y, rt.X, rt.Y);
-                            if (dist < repulsionRadius)
-                            {
-                                float rMidX = (rs.X + rt.X) / 2;
-                                float rMidY = (rs.Y + rt.Y) / 2;
-                                float dx = midX - rMidX;
-                                float dy = midY - rMidY;
-                                float len = (float)Math.Sqrt(dx * dx + dy * dy);
-
-                                if (len > 0)
-                                {
-                                    float force = (1 - (dist / repulsionRadius)) * repulsionStrength;
-                                    targetX = (dx / len) * force;
-                                    targetY = (dy / len) * force;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            float diffX = targetX - edge.AnimatedOffsetX;
-            float diffY = targetY - edge.AnimatedOffsetY;
-
-            if (Math.Abs(diffX) > 0.01f || Math.Abs(diffY) > 0.01f)
-            {
-                edge.AnimatedOffsetX += diffX * smoothing;
-                edge.AnimatedOffsetY += diffY * smoothing;
-                needsRedraw = true;
-            }
-        }
-*/
-        // جایگزین ساده: فقط ریست کردن انیمیشن خطوط (اگر قبلاً تکان خورده‌اند)
-        foreach (var edge in vm.Edges)
-        {
-            // اگر قبلاً جابجا شده‌اند، به نرمی به صفر برگردند
             if (edge.AnimatedOffsetX != 0 || edge.AnimatedOffsetY != 0)
             {
                 edge.AnimatedOffsetX += (0 - edge.AnimatedOffsetX) * smoothing;
                 edge.AnimatedOffsetY += (0 - edge.AnimatedOffsetY) * smoothing;
-                    
-                // اسنپ به صفر برای جلوگیری از محاسبات بی‌پایان
                 if (Math.Abs(edge.AnimatedOffsetX) < 0.1f) edge.AnimatedOffsetX = 0;
                 if (Math.Abs(edge.AnimatedOffsetY) < 0.1f) edge.AnimatedOffsetY = 0;
-                    
                 needsRedraw = true;
             }
         }
-        
-        
-        if (needsRedraw)
-        {
-            GraphCanvas.InvalidateVisual();
-        }
+
+        if (needsRedraw) GraphCanvas.InvalidateVisual();
     }
     // =========================================================
     //                 RENDERING
@@ -269,7 +216,6 @@ public partial class GraphView : UserControl
 
         DrawGraphSmart(canvas, vm.Nodes, vm.Edges, focusNode);
 
-        // رسم هایلایت دور نودهای انتخاب شده
         if (vm.SelectedNodes != null && vm.SelectedNodes.Any())
         {
             float strokeWidth = 3f / _scale;
@@ -292,7 +238,6 @@ public partial class GraphView : UserControl
 
         canvas.Restore();
 
-        // Tooltips
         if (_draggedNode == null && _draggedEdge == null)
         {
             if (_hoveredNode != null)
@@ -308,7 +253,6 @@ public partial class GraphView : UserControl
         }
     }
 
-    // *** متد جدید: تولید تصویر برای گزارش ***
     private byte[] GenerateSubGraphImage(List<GraphNode> nodes, List<GraphEdge> edges, bool showDuration)
     {
         if (nodes == null || !nodes.Any()) return null;
@@ -328,12 +272,9 @@ public partial class GraphView : UserControl
         int imgHeight = 900;
         float scale = Math.Min(imgWidth / graphWidth, imgHeight / graphHeight);
 
-        // *** محاسبه سایز فونت داینامیک ***
-        // اگر Scale کم باشد (یعنی گراف بزرگ است و کوچک شده)، باید فونت را بزرگ کنیم
-        // عدد پایه 14 است. تقسیم بر scale باعث می‌شود سایز نهایی بصری ثابت بماند.
-        // مثلا اگر scale=0.5 باشد، سایز فونت 28 می‌شود تا در تصویر نهایی 14 دیده شود.
+        // سایز فونت داینامیک برای خوانایی در خروجی
         float optimalFontSize = 16f / scale;
-        if (optimalFontSize < 12) optimalFontSize = 12; // حداقل سایز
+        if (optimalFontSize < 12) optimalFontSize = 12;
 
         using var surface = SKSurface.Create(new SKImageInfo(imgWidth, imgHeight));
         var canvas = surface.Canvas;
@@ -343,7 +284,6 @@ public partial class GraphView : UserControl
         canvas.Scale(scale);
         canvas.Translate(-centerX, -centerY);
 
-        // رسم یال‌ها با برچسب
         foreach (var edge in edges)
         {
             var s = nodes.FirstOrDefault(n => n.Id == edge.SourceId);
@@ -354,7 +294,6 @@ public partial class GraphView : UserControl
             paint.Color = SKColors.Black.WithAlpha(180);
             paint.StrokeWidth = Math.Max(edge.Thickness, 2);
 
-            // در گزارش، خطوط بدون آفست انیمیشن رسم شوند
             var cp = GetControlPoint(s.X, s.Y, t.X, t.Y, edge.ControlPointOffsetX, edge.ControlPointOffsetY);
             using (var path = new SKPath())
             {
@@ -363,18 +302,15 @@ public partial class GraphView : UserControl
                 canvas.DrawPath(path, paint);
             }
 
-            // رسم برچسب مقدار
             string labelText = showDuration ? $"{edge.TotalDurationMinutes:N0}m" : $"{edge.CallCount}c";
             DrawEdgeLabel(canvas, s, t, edge, labelText, optimalFontSize);
         }
 
-        // رسم نودها
         foreach (var node in nodes)
         {
             float radius = 15 + (float)(node.Weight * 5);
             var nodePaint = new SKPaint { Style = SKPaintStyle.Fill, Color = SKColors.DodgerBlue, IsAntialias = true };
 
-            // اگر نود انتخاب شده است (در لیست SelectedNodes ویومدل)
             var vm = DataContext as GraphViewModel;
             if (vm != null && vm.SelectedNodes.Any(sn => sn.Id == node.Id))
             {
@@ -419,7 +355,7 @@ public partial class GraphView : UserControl
         var textPaint = new SKPaint
         {
             Color = SKColors.DarkRed,
-            TextSize = fontSize, // استفاده از سایز داینامیک
+            TextSize = fontSize,
             IsAntialias = true,
             TextAlign = SKTextAlign.Center,
             Typeface = SKTypeface.FromFamilyName("Arial", SKFontStyle.Bold)
@@ -428,7 +364,6 @@ public partial class GraphView : UserControl
         float textWidth = textPaint.MeasureText(text);
         float padding = fontSize * 0.4f;
 
-        // کادر دور متن
         var bgRect = new SKRect(
             labelX - textWidth / 2 - padding,
             labelY - fontSize,
