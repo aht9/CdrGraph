@@ -12,46 +12,60 @@
     
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-        <!-- تعریف کانورتر معکوس (مطمئن شوید فایل کلاس آن را ساخته‌اید) -->
         <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
     </UserControl.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>     <!-- Canvas Area -->
-            <ColumnDefinition Width="Auto"/>  <!-- Side Panel -->
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
         <!-- Main Canvas Area -->
         <Grid Grid.Column="0" ClipToBounds="True">
             
-            <!-- Dynamic Background Style -->
             <Grid.Style>
                 <Style TargetType="Grid">
-                    <Setter Property="Background" Value="#1E1E1E"/> <!-- Dark Default -->
+                    <Setter Property="Background" Value="#1E1E1E"/>
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding IsLightTheme}" Value="True">
-                            <Setter Property="Background" Value="White"/> <!-- Light Mode -->
+                            <Setter Property="Background" Value="White"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Grid.Style>
 
-            <!-- Top Toolbar (Zoom & Theme) -->
+            <!-- Top Toolbar (Search + Zoom + Theme) -->
             <Border VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,10,0,0" 
                     Background="#AA444444" CornerRadius="5" Padding="5" Panel.ZIndex="100">
                 <StackPanel Orientation="Horizontal">
+                    
+                    <!-- *** بخش جستجو (اضافه شده) *** -->
+                    <TextBox Width="120" Height="25" 
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                             VerticalContentAlignment="Center" Margin="0,0,5,0"
+                             Padding="5,0" ToolTip="Enter phone number">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
+                    <Button Content="🔍" Command="{Binding SearchCommand}" Width="25" Height="25" Margin="0,0,15,0"
+                            Background="#007ACC" Foreground="White" BorderThickness="0"
+                            ToolTip="Search and Focus"/>
+
+                    <!-- Zoom Controls -->
                     <TextBlock Text="Zoom:" VerticalAlignment="Center" Foreground="White" Margin="5,0"/>
                     <ComboBox Width="70" ItemsSource="{Binding ZoomLevels}" SelectedItem="{Binding SelectedZoom}" 
                               SelectionChanged="OnZoomChanged" Margin="0,0,10,0"/>
 
+                    <!-- Theme Controls -->
                     <TextBlock Text="Theme:" VerticalAlignment="Center" Foreground="White" Margin="5,0"/>
                     <ComboBox Width="90" ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" 
                               SelectionChanged="OnThemeChanged"/>
                 </StackPanel>
             </Border>
 
-            <!-- The Graph Canvas -->
+            <!-- Graph Canvas -->
             <skia:SKElement Name="GraphCanvas" 
                             PaintSurface="OnPaintSurface"
                             MouseDown="OnMouseDown"
@@ -59,7 +73,7 @@
                             MouseUp="OnMouseUp"
                             MouseWheel="OnMouseWheel"/>
 
-            <!-- Info Overlay (Top Left) -->
+            <!-- Info Overlay -->
             <Border VerticalAlignment="Top" HorizontalAlignment="Left" 
                     Background="#AA000000" CornerRadius="5" Margin="10,60,0,0" Padding="10" IsHitTestVisible="False">
                 <TextBlock Text="{Binding StatusText}" Foreground="White" FontWeight="Bold"/>
@@ -68,22 +82,16 @@
             <!-- Bottom Actions Bar -->
             <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Right" Orientation="Horizontal" Margin="20">
                 
-                <!-- Report Controls Group -->
-                <!-- FIX: Using Border for Radius/Padding instead of StackPanel -->
                 <Border Background="#AA000000" Padding="5" CornerRadius="5" Margin="0,0,20,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="Report By:" Foreground="White" VerticalAlignment="Center" Margin="5,0"/>
-                        
-                        <!-- Radio Buttons -->
                         <RadioButton GroupName="RepType" Content="Calls" 
                                      IsChecked="{Binding ReportByDuration, Converter={StaticResource InverseBooleanConverter}}" 
                                      Foreground="White" Margin="5,0" VerticalAlignment="Center"/>
-                        
                         <RadioButton GroupName="RepType" Content="Duration" 
                                      IsChecked="{Binding ReportByDuration}" 
                                      Foreground="White" Margin="5,0" VerticalAlignment="Center"/>
                         
-                        <!-- Report Button -->
                         <Button Content="Report Commons" 
                                 Command="{Binding GenerateCommonReportCommand}" 
                                 Background="#8A2BE2" Foreground="White" BorderThickness="0" Padding="10,5" Margin="10,0,0,0">
@@ -94,34 +102,21 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Reset Button -->
-                <Button Command="{Binding ResetCommand}" 
-                        Content="New Project" 
-                        Padding="15,8" Margin="0,0,10,0" 
-                        Background="#C42B1C" Foreground="White" FontWeight="Bold" BorderThickness="0">
-                     <Button.Resources>
-                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
-                     </Button.Resources>
+                <Button Command="{Binding ResetCommand}" Content="New Project" Padding="15,8" Margin="0,0,10,0" Background="#C42B1C" Foreground="White" BorderThickness="0">
+                     <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style></Button.Resources>
                 </Button>
 
-                <!-- Export Button -->
-                <Button Click="ExportButton_Click" 
-                        Content="Export PDF" 
-                        Padding="15,8" 
-                        Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0">
-                     <Button.Resources>
-                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style>
-                     </Button.Resources>
+                <Button Click="ExportButton_Click" Content="Export PDF" Padding="15,8" Background="#007ACC" Foreground="White" BorderThickness="0">
+                     <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="5"/></Style></Button.Resources>
                 </Button>
             </StackPanel>
         </Grid>
 
-        <!-- Side Details Panel (Right) -->
+        <!-- Side Details Panel -->
         <Border Grid.Column="1" Width="350" Background="#252526" BorderBrush="#3E3E42" BorderThickness="1,0,0,0">
             <Border.Style>
                 <Style TargetType="Border">
                     <Style.Triggers>
-                        <!-- Hide panel if no node is selected -->
                         <DataTrigger Binding="{Binding SelectedNode}" Value="{x:Null}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
@@ -138,35 +133,26 @@
 
                 <TextBlock Grid.Row="0" Text="Node Details" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
 
-                <!-- Summary Info -->
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
-                    <TextBlock Text="{Binding SelectedNode.Id, StringFormat='Number: {0}'}" FontSize="14" Foreground="#007ACC" FontWeight="Bold"/>
-                    <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Total Calls: {0}'}" Foreground="Gray"/>
-                    <TextBlock Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Duration: {0:N2} min'}" Foreground="Gray"/>
+                    <TextBlock Text="{Binding SelectedNode.Id, StringFormat='ID/User: {0}'}" FontSize="14" Foreground="#007ACC" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Interactions/Total Calls: {0}'}" Foreground="Gray"/>
+                    <TextBlock Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Weight: {0:N2} min'}" Foreground="Gray"/>
                     
-                    <!-- Multi-Select Info -->
                     <TextBlock Text="{Binding SelectedNodes.Count, StringFormat='Nodes Selected: {0}'}" 
                                Foreground="Gold" Margin="0,10,0,0" 
                                Visibility="{Binding SelectedNodes.Count, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </StackPanel>
 
-                <!-- Details Grid -->
                 <DockPanel Grid.Row="2">
                     <TextBlock DockPanel.Dock="Top" Text="Related Records:" Foreground="White" Margin="0,0,0,5"/>
-                    <DataGrid ItemsSource="{Binding SelectedNodeRecords}" 
-                              AutoGenerateColumns="False" 
-                              Background="#1E1E1E" 
-                              RowBackground="#2D2D30" 
-                              Foreground="White" 
-                              HeadersVisibility="Column" 
-                              BorderThickness="0" 
-                              IsReadOnly="True" 
-                              GridLinesVisibility="Horizontal">
+                    <DataGrid ItemsSource="{Binding SelectedNodeRecords}" AutoGenerateColumns="False" 
+                              Background="#1E1E1E" RowBackground="#2D2D30" Foreground="White" 
+                              HeadersVisibility="Column" BorderThickness="0" IsReadOnly="True" GridLinesVisibility="Horizontal">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="File" Binding="{Binding File}" Width="60"/>
                             <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="70"/>
                             <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="80"/>
-                            <DataGridTextColumn Header="Dur(s)" Binding="{Binding Duration}" Width="50"/>
+                            <DataGridTextColumn Header="Dur(s)/W" Binding="{Binding Duration}" Width="50"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

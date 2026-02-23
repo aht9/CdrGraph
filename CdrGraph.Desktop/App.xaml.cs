@@ -8,6 +8,7 @@ using CdrGraph.Infrastructure.Data;
 using CdrGraph.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Serilog;
 
 namespace CdrGraph.Desktop;
 
@@ -21,52 +22,92 @@ public partial class App : Application
 
     public App()
     {
-        // ساختن و پیکربندی Host (کانتینر DI)
-        AppHost = Host.CreateDefaultBuilder()
-            .ConfigureServices((hostContext, services) =>
-            {
-                // 1. ثبت سرویس‌های لایه Infrastructure
-                services.AddDbContext<AppDbContext>();
-                services.AddSingleton<IExcelReaderService, ExcelReaderService>();
-                services.AddSingleton<IGraphLayoutService, FruchtermanReingoldLayoutService>();
-                services.AddSingleton<CdrDataService>(); 
-                // 2. ثبت ViewModel ها
-                // MainViewModel وضعیت کلی برنامه را نگه می‌دارد پس Singleton است
-                services.AddSingleton<MainViewModel>();
-                // ImportViewModel می‌تواند هر بار جدید ساخته شود
-                services.AddTransient<ImportViewModel>();
-                // GraphViewModel معمولاً داخل MainViewModel ساخته می‌شود، اما اگر نیاز به تزریق داشت می‌توان اینجا اضافه کرد
+        // 1. تنظیمات اولیه سیستم لاگ (Logging Setup)
+        // فایل لاگ در پوشه logs کنار فایل اجرایی ساخته می‌شود و روزانه چرخش می‌کند
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.File("logs/cdr-log-.txt", rollingInterval: RollingInterval.Day)
+            .CreateLogger();
 
-                // 3. ثبت پنجره اصلی (تا بتواند ViewModel را در سازنده خود دریافت کند)
-                services.AddSingleton<MainWindow>();
-            })
-            .Build();
+        // 2. مدیریت خطاهای مدیریت نشده (Global Exception Handling)
+        // این بخش خطاهایی که باعث بسته شدن ناگهانی برنامه می‌شوند را می‌گیرد
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+        {
+            var ex = e.ExceptionObject as Exception;
+            Log.Fatal(ex, "Application crashed due to a critical system error (AppDomain).");
+            MessageBox.Show($"Critical Error: {ex?.Message}\nSee logs for details.", "System Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        };
+
+        // خطاهای مربوط به ترد UI (مثل بایندینگ یا گرافیک)
+        DispatcherUnhandledException += (s, e) =>
+        {
+            Log.Fatal(e.Exception, "Application crashed on UI Thread (Dispatcher).");
+            e.Handled = true; // جلوگیری از بسته شدن برنامه (اختیاری)
+            MessageBox.Show($"UI Error: {e.Exception.Message}\nSee logs for details.", "UI Error", MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        };
+
+        try 
+        {
+            Log.Information("==================================================");
+            Log.Information($"Application Starting... OS: {Environment.OSVersion}");
+
+            AppHost = Host.CreateDefaultBuilder()
+                .UseSerilog() // تزریق Serilog به کانتینر مایکروسافت
+                .ConfigureServices((hostContext, services) =>
+                {
+                    // 1. Infrastructure Services
+                    services.AddDbContext<AppDbContext>();
+                    services.AddSingleton<IExcelReaderService, ExcelReaderService>();
+                    services.AddSingleton<IGraphLayoutService, FruchtermanReingoldLayoutService>();
+                    services.AddSingleton<CdrDataService>();
+
+                    // 2. ViewModels
+                    services.AddSingleton<MainViewModel>();
+                    services.AddTransient<ImportViewModel>(); 
+
+                    // 3. Views
+                    services.AddSingleton<MainWindow>();
+                })
+                .Build();
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Host builder failed to initialize.");
+            MessageBox.Show($"Startup Error: {ex.Message}");
+        }
     }
 
     protected override async void OnStartup(StartupEventArgs e)
     {
-        // شروع Host
-        await AppHost!.StartAsync();
+        try
+        {
+            await AppHost!.StartAsync();
 
-        // دریافت پنجره اصلی از DI Container
-        // این کار باعث می‌شود MainViewModel به طور خودکار در سازنده MainWindow تزریق شود
-        var startupForm = AppHost.Services.GetRequiredService<MainWindow>();
-
-        // نمایش پنجره
-        startupForm.Show();
+            var startupForm = AppHost.Services.GetRequiredService<MainWindow>();
+            startupForm.Show();
+            Log.Information("MainWindow displayed successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error during OnStartup execution.");
+            MessageBox.Show($"Launch Error: {ex.Message}");
+        }
 
         base.OnStartup(e);
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
-        // توقف تمیز سرویس‌ها هنگام بستن برنامه
+        Log.Information("Application Exiting normally.");
         if (AppHost != null)
         {
             await AppHost.StopAsync();
             AppHost.Dispose();
         }
-
+        // اطمینان از نوشته شدن آخرین لاگ‌ها در فایل
+        Log.CloseAndFlush();
         base.OnExit(e);
     }
 }

@@ -5,12 +5,14 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="clr-namespace:CdrGraph.Desktop.ViewModels"
+             xmlns:converters="clr-namespace:CdrGraph.Desktop.Converters"
              d:DataContext="{d:DesignInstance Type=vm:ImportViewModel}"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900">
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
     </UserControl.Resources>
 
     <Grid Margin="20">
@@ -111,12 +113,12 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Number *:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Source (User/Num) *:" VerticalAlignment="Center"
                                        Foreground="#CCC" Margin="0,0,10,15" />
                             <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,15"
                                       ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedSource}" />
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Target Number *:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Target (User/Num) *:" VerticalAlignment="Center"
                                        Foreground="#CCC" Margin="0,0,10,15" />
                             <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,15"
                                       ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedTarget}" />
@@ -146,16 +148,34 @@
 
         <!-- Footer -->
         <StackPanel Grid.Row="2" Margin="0,10,0,0">
-            <!-- تنظیمات محدودیت نود -->
-            <Border Background="#252526" CornerRadius="5" Padding="10" Margin="0,0,0,15">
+            <!-- تنظیمات محدودیت نود (فقط در حالت عادی فعال باشد) -->
+            <!-- از IsEnabled بایند شده به IsCommonAnalysisMode (معکوس) استفاده کنید -->
+            <Border Background="#252526" CornerRadius="5" Padding="10" Margin="0,0,0,10">
                 <StackPanel>
                     <DockPanel LastChildFill="False">
-                        <TextBlock Text="Performance Limit (Max Nodes):" Foreground="Silver" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding MaxNodeLimit}" Foreground="#007ACC" FontWeight="Bold"
-                                   DockPanel.Dock="Right" VerticalAlignment="Center" />
+                        <TextBlock Text="Performance Limit (Max Nodes):" Foreground="Silver" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding MaxNodeLimit}" Foreground="#007ACC" FontWeight="Bold" DockPanel.Dock="Right" VerticalAlignment="Center"/>
                     </DockPanel>
-                    <Slider Minimum="100" Maximum="2000" Value="{Binding MaxNodeLimit}"
-                            IsSnapToTickEnabled="True" TickFrequency="100" Margin="0,5,0,0" />
+                    <Slider Minimum="100" Maximum="5000" Value="{Binding MaxNodeLimit}" 
+                            IsSnapToTickEnabled="True" TickFrequency="100" Margin="0,5,0,0"
+                            IsEnabled="{Binding IsCommonAnalysisMode, Converter={StaticResource InverseBooleanConverter}}"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- *** انتخاب نوع آنالیز (جدید) *** -->
+            <Border Background="#252526" CornerRadius="5" Padding="10" Margin="0,0,0,15">
+                <StackPanel>
+                    <TextBlock Text="Analysis Mode:" Foreground="Silver" Margin="0,0,0,5"/>
+                    <RadioButton GroupName="Mode" Content="Most Active Numbers (Standard)" 
+                                 IsChecked="{Binding IsCommonAnalysisMode, Converter={StaticResource InverseBooleanConverter}}"
+                                 Foreground="White" Margin="0,0,0,5"/>
+            
+                    <RadioButton GroupName="Mode" Content="Common Connections (Intersection)" 
+                                 IsChecked="{Binding IsCommonAnalysisMode}"
+                                 Foreground="White" FontWeight="Bold"/>
+                         
+                    <TextBlock Text="* Requires at least 2 files. Shows only nodes present in multiple files." 
+                               FontSize="10" Foreground="Gray" Margin="18,2,0,0" FontStyle="Italic"/>
                 </StackPanel>
             </Border>
 

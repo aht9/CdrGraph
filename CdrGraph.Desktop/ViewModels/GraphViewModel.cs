@@ -88,12 +88,23 @@ public class GraphViewModel : ObservableObject
         set => SetProperty(ref _reportByDuration, value);
     }
 
+    private string _searchText;
+
+    public string SearchText
+    {
+        get => _searchText;
+        set => SetProperty(ref _searchText, value);
+    }
+
     // Delegate برای درخواست تولید تصویر از View (بدون وابستگی مستقیم به UI)
     public Func<List<GraphNode>, List<GraphEdge>, bool, byte[]> SubGraphImageGenerator { get; set; }
+    public Action<GraphNode> RequestFocusOnNode { get; set; } // درخواست زوم روی نود از View
 
     // --- دستورات (Commands) ---
     public RelayCommand ResetCommand { get; }
     public RelayCommand GenerateCommonReportCommand { get; }
+    public RelayCommand SearchCommand { get; }
+
 
     public GraphViewModel(List<GraphNode> nodes, List<GraphEdge> edges, MainViewModel mainViewModel,
         CdrDataService dataService)
@@ -110,6 +121,30 @@ public class GraphViewModel : ObservableObject
 
         // گزارش مشترکات فقط وقتی فعال است که حداقل ۲ نود انتخاب شده باشد
         GenerateCommonReportCommand = new RelayCommand(GenerateCommonReport, _ => SelectedNodes.Count > 1);
+
+        // Search Command
+        SearchCommand = new RelayCommand(PerformSearch);
+    }
+    
+    private void PerformSearch(object obj)
+    {
+        if (string.IsNullOrWhiteSpace(SearchText)) return;
+
+        // جستجوی ساده (حاوی متن)
+        var targetNode = Nodes.FirstOrDefault(n => n.Id.Contains(SearchText));
+
+        if (targetNode != null)
+        {
+            // 1. انتخاب نود
+            ToggleNodeSelection(targetNode, false); // false = single selection
+                
+            // 2. درخواست از View برای زوم و پن کردن روی نود
+            RequestFocusOnNode?.Invoke(targetNode);
+        }
+        else
+        {
+            MessageBox.Show($"Node '{SearchText}' not found.", "Search Result");
+        }
     }
 
     // متد مدیریت انتخاب (توسط View صدا زده می‌شود)
