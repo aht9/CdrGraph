@@ -10,10 +10,10 @@ public class CdrEntity
     [Key]
     public int Id { get; set; }
 
-    [MaxLength(50)]
+    [MaxLength(255)] 
     public string SourceNumber { get; set; }
 
-    [MaxLength(50)]
+    [MaxLength(255)] 
     public string TargetNumber { get; set; }
 
     public double Duration { get; set; }

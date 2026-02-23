@@ -131,6 +131,11 @@ public class ExcelReaderService : IExcelReaderService
                 // اگر شماره‌ها خالی بودند رد کن
                 if (source == null || target == null) continue;
 
+                string sourceStr = source.ToString().Trim();
+                string targetStr = target.ToString().Trim();
+                
+                if (string.IsNullOrWhiteSpace(sourceStr) || string.IsNullOrWhiteSpace(targetStr)) continue;
+                
                 var record = new CdrRecord
                 {
                     SourceNumber = source.ToString(),

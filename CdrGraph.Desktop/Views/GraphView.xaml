@@ -134,9 +134,9 @@
                 <TextBlock Grid.Row="0" Text="Node Details" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
 
                 <StackPanel Grid.Row="1" Margin="0,0,0,15">
-                    <TextBlock Text="{Binding SelectedNode.Id, StringFormat='Number: {0}'}" FontSize="14" Foreground="#007ACC" FontWeight="Bold"/>
-                    <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Total Calls: {0}'}" Foreground="Gray"/>
-                    <TextBlock Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Duration: {0:N2} min'}" Foreground="Gray"/>
+                    <TextBlock Text="{Binding SelectedNode.Id, StringFormat='ID/User: {0}'}" FontSize="14" Foreground="#007ACC" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding SelectedNode.TotalCalls, StringFormat='Interactions/Total Calls: {0}'}" Foreground="Gray"/>
+                    <TextBlock Text="{Binding SelectedNode.TotalDurationMinutes, StringFormat='Total Weight: {0:N2} min'}" Foreground="Gray"/>
                     
                     <TextBlock Text="{Binding SelectedNodes.Count, StringFormat='Nodes Selected: {0}'}" 
                                Foreground="Gold" Margin="0,10,0,0" 
@@ -152,7 +152,7 @@
                             <DataGridTextColumn Header="File" Binding="{Binding File}" Width="60"/>
                             <DataGridTextColumn Header="Date" Binding="{Binding Date}" Width="70"/>
                             <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="80"/>
-                            <DataGridTextColumn Header="Dur(s)" Binding="{Binding Duration}" Width="50"/>
+                            <DataGridTextColumn Header="Dur(s)/W" Binding="{Binding Duration}" Width="50"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

@@ -767,10 +767,10 @@ public partial class GraphView : UserControl
         new SKPoint(worldPos.X * _scale + _offset.X, worldPos.Y * _scale + _offset.Y);
 
     private string GetNodeInfo(GraphNode node) =>
-        $"Number: {node.Id}\nTotal Calls: {node.TotalCalls}\nDuration: {node.TotalDurationMinutes:N1} min";
+        $"Number/ID: {node.Id}\nInteractions/Total Calls: {node.TotalCalls}\nWeight: {node.TotalDurationMinutes:N1}";
 
     private string GetEdgeInfo(GraphEdge edge, GraphViewModel vm) =>
-        $"Calls: {edge.CallCount}\nDuration: {edge.TotalDurationMinutes:N1} min";
+        $"Interactions/Calls: {edge.CallCount}\nWeight: {edge.TotalDurationMinutes:N1}";
 
     private void OnThemeChanged(object sender, SelectionChangedEventArgs e)
     {

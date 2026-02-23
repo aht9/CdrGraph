@@ -113,12 +113,12 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Number *:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Source (User/Num) *:" VerticalAlignment="Center"
                                        Foreground="#CCC" Margin="0,0,10,15" />
                             <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,15"
                                       ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedSource}" />
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Target Number *:" VerticalAlignment="Center"
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Target (User/Num) *:" VerticalAlignment="Center"
                                        Foreground="#CCC" Margin="0,0,10,15" />
                             <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,15"
                                       ItemsSource="{Binding DetectedHeaders}" SelectedItem="{Binding SelectedTarget}" />
